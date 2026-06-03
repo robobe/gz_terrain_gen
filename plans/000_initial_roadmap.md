@@ -1,4 +1,19 @@
-# Plan 0: Codex Development Plan
+# 000: Initial Codex Development Roadmap
+
+## Status
+
+superseded
+
+## Date
+
+2026-06-03
+
+## Goal
+
+Capture the original roadmap for turning the script pipeline into a
+reproducible, configurable terrain generation tool.
+
+## Original Roadmap
 
 This plan is written so Codex can develop the project in small, reviewable
 steps. Each task should finish with a runnable check and a short note about what
@@ -146,7 +161,7 @@ gz sim --levels levels_terrain.sdf
 ## First Codex Prompt To Use Next
 
 ```text
-Review the repository and implement Milestone 1 from plan0.md. Add .gitignore
-and dependency documentation only. Do not refactor Python yet. Run py_compile
-after the change.
+Review the repository and implement Milestone 1 from this roadmap. Add
+.gitignore and dependency documentation only. Do not refactor Python yet. Run
+py_compile after the change.
 ```

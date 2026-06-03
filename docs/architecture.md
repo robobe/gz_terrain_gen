@@ -88,12 +88,13 @@ Important contract:
 ```text
 .
 ├── README.md
-├── arhitecture.md
-├── plan0.md
+├── AGENTS.md
+├── docs/
 ├── pyproject.toml
 ├── uv.lock
 ├── assets/
 │   └── texture/
+├── plans/
 ├── src/
 │   └── gz_terrain_gen/
 ├── tests/

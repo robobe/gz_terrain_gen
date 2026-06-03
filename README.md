@@ -113,6 +113,14 @@ src/gz_terrain_gen/
 New source changes should go under `src/gz_terrain_gen/`; new generated terrain
 output should go under `outputs/`.
 
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Development](docs/development.md)
+- [Gazebo usage](docs/gazebo.md)
+- [Agent instructions](AGENTS.md)
+- [Plan records](plans/README.md)
+
 ## Dependencies
 
 Python dependencies are declared in `pyproject.toml` and locked in `uv.lock`.
