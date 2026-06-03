@@ -3,6 +3,10 @@ from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape
 
+import numpy as np
+
+DEM_SOURCE_Z_OFFSET_INDEX = 4
+
 
 def write_dae(path: Path, name: str, vertices: list[tuple[float, float, float]], faces: list[tuple[int, int, int]]) -> None:
     flat_vertices = " ".join(f"{x:.6f} {y:.6f} {z:.6f}" for x, y, z in vertices)
@@ -57,7 +61,19 @@ def write_dae(path: Path, name: str, vertices: list[tuple[float, float, float]],
     path.write_text(dae)
 
 
-def open_dem(path: Path) -> tuple[Any, Any, float | None, tuple[float, ...]]:
+def valid_elevation_min(elevation: Any, nodata: float | None) -> float:
+    finite = np.isfinite(elevation)
+    if nodata is None or np.isnan(nodata):
+        valid = elevation[finite]
+    else:
+        valid = elevation[finite & (elevation != nodata)]
+
+    if valid.size == 0:
+        return 0.0
+    return float(np.min(valid))
+
+
+def open_dem(path: Path) -> tuple[Any, Any, float | None, tuple[float, ...], float]:
     import rasterio
 
     if not path.exists():
@@ -67,8 +83,9 @@ def open_dem(path: Path) -> tuple[Any, Any, float | None, tuple[float, ...]]:
         elevation = dataset.read(1).astype(float)
         nodata = dataset.nodata
         inverse = ~dataset.transform
+    z_offset_m = valid_elevation_min(elevation, nodata)
     inverse_transform = (inverse.c, inverse.a, inverse.b, inverse.f, inverse.d, inverse.e)
-    return None, elevation, nodata, inverse_transform
+    return None, elevation, nodata, inverse_transform, z_offset_m
 
 
 def sample_dem(elevation: Any, nodata: float | None, inverse_transform: tuple[float, ...], lon: float, lat: float) -> float:
@@ -116,8 +133,15 @@ def tile_shape(tile_path: Path) -> tuple[int, int]:
         return dataset.width, dataset.height
 
 
-def tile_to_mesh(tile: dict[str, str], source: tuple[Any, Any, float | None, tuple[float, ...]], tiles_dir: Path) -> tuple[list[tuple[float, float, float]], list[tuple[int, int, int]]]:
-    _dem_dataset, elevation, nodata, inverse_transform = source
+def source_z_offset(source: tuple[Any, ...]) -> float:
+    if len(source) <= DEM_SOURCE_Z_OFFSET_INDEX:
+        return 0.0
+    return float(source[DEM_SOURCE_Z_OFFSET_INDEX])
+
+
+def tile_to_mesh(tile: dict[str, str], source: tuple[Any, ...], tiles_dir: Path) -> tuple[list[tuple[float, float, float]], list[tuple[int, int, int]]]:
+    _dem_dataset, elevation, nodata, inverse_transform = source[:4]
+    z_offset_m = source_z_offset(source)
     tile_path = tiles_dir / tile["file"]
     cols, rows = tile_shape(tile_path)
 
@@ -138,7 +162,7 @@ def tile_to_mesh(tile: dict[str, str], source: tuple[Any, Any, float | None, tup
             u = col / cols
             lon = west + (u * (east - west))
             x = (-width_m / 2.0) + (u * width_m)
-            z = sample_dem(elevation, nodata, inverse_transform, lon, lat)
+            z = sample_dem(elevation, nodata, inverse_transform, lon, lat) - z_offset_m
             vertices.append((x, y, z))
 
     faces = []

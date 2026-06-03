@@ -70,14 +70,16 @@ Responsibilities:
 - Opens `outputs/<world-name>/dem.tif` with rasterio.
 - Samples the DEM using bilinear interpolation.
 - Builds a local mesh for each tile where X/Y are tile-local meters and Z is
-  DEM elevation.
+  DEM elevation normalized by subtracting the minimum valid DEM elevation.
 - Writes `outputs/<world-name>/mesh/tile_X_Y.dae`.
-- Records mesh count and mesh directory in `metadata.json`.
+- Records mesh count, mesh directory, normalization flag, and Z offset in
+  `metadata.json`.
 
 Important contract:
 
 - Meshes are centered around local `(0, 0)` and later placed in Gazebo using the
   center coordinates from `tiles.csv`.
+- Mesh Z values are normalized so the terrain minimum aligns with Gazebo Z `0`.
 
 ### Gazebo Generation
 
@@ -173,7 +175,7 @@ src/gz_terrain_gen/
 - Output policy: keep generated DEM/mesh/Gazebo files out of git by default.
 - Coordinate model: document whether Gazebo X/Y origin is the southwest corner,
   DEM center, or configurable origin.
-- Height handling: decide whether raw DEM elevations should be preserved,
-  normalized, offset to zero, or scaled.
+- Height handling: mesh Z values are normalized to Gazebo Z `0`; metadata keeps
+  the subtracted DEM elevation offset.
 - Mesh density: decide whether to use every DEM pixel or resample to a target
   mesh resolution for performance.

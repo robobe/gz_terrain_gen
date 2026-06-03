@@ -4,7 +4,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from gz_terrain_gen.metadata import dem_metadata, requested_area_metadata, update_metadata, viewer_metadata
+from gz_terrain_gen.metadata import dem_metadata, mesh_metadata, requested_area_metadata, update_metadata, viewer_metadata
 
 
 def test_metadata_writes_expected_keys_and_elevation_stats(tmp_path) -> None:
@@ -63,3 +63,12 @@ def test_viewer_metadata_contains_expected_paths(tmp_path) -> None:
     assert metadata["html_path"] == str(viewer_dir / "index.html")
     assert metadata["vertex_count"] == 8
     assert metadata["face_count"] == 4
+
+
+def test_mesh_metadata_records_z_normalization(tmp_path) -> None:
+    metadata = mesh_metadata(3, tmp_path / "mesh", 42.5)
+
+    assert metadata["count"] == 3
+    assert metadata["mesh_dir"] == str(tmp_path / "mesh")
+    assert metadata["normalized_to_gazebo_z_zero"] is True
+    assert metadata["z_offset_m"] == 42.5

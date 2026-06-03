@@ -54,7 +54,9 @@ uv run gz-terrain-gen --world-name demo_world
 
 Generated artifacts are written under `outputs/<world-name>/` by default. If the
 target world folder already exists, the CLI asks before removing it and
-continuing.
+continuing. Mesh Z values are normalized so the minimum terrain elevation aligns
+with Gazebo Z `0`; the subtracted elevation offset is recorded in
+`metadata.json`.
 
 ```text
 outputs/demo_world/

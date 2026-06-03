@@ -84,6 +84,8 @@ def test_combined_mesh_offsets_tiles_from_manifest(tmp_path: Path) -> None:
     assert float(np.max(terrain.vertices[:, 0])) == 20.0
     assert float(np.min(terrain.vertices[:, 1])) == 0.0
     assert float(np.max(terrain.vertices[:, 1])) == 10.0
+    assert float(np.min(terrain.vertices[:, 2])) == 0.0
+    assert float(np.max(terrain.vertices[:, 2])) == 10.0
 
 
 def test_generate_viewer_writes_glb_and_html(tmp_path: Path) -> None:

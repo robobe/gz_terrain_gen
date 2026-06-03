@@ -109,10 +109,12 @@ def tile_metadata(tile_count: int, tile_m: int, tiles_dir: Path, manifest_path: 
     }
 
 
-def mesh_metadata(mesh_count: int, mesh_dir: Path) -> dict[str, Any]:
+def mesh_metadata(mesh_count: int, mesh_dir: Path, z_offset_m: float = 0.0) -> dict[str, Any]:
     return {
         "count": mesh_count,
         "mesh_dir": str(mesh_dir),
+        "normalized_to_gazebo_z_zero": True,
+        "z_offset_m": z_offset_m,
     }
 
 

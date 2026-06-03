@@ -7,7 +7,7 @@ from loguru import logger
 
 from gz_terrain_gen.gazebo import generate_gazebo_worlds
 from gz_terrain_gen.log_config import LOG_LEVELS, configure_logging
-from gz_terrain_gen.mesh import generate_meshes
+from gz_terrain_gen.mesh import generate_meshes, open_dem, source_z_offset
 from gz_terrain_gen.metadata import (
     dem_metadata,
     gazebo_metadata,
@@ -117,13 +117,15 @@ def run_pipeline(
     logger.info("starting mesh generation for world {}", world_name)
     logger.debug("mesh output directory: {}", paths["mesh"])
     mesh_count = generate_meshes(paths["dem"], paths["tiles"], paths["manifest"], paths["mesh"])
+    z_offset_m = source_z_offset(open_dem(paths["dem"]))
+    logger.info("normalized mesh Z values by subtracting {:.3f} m", z_offset_m)
     logger.info("completed mesh generation: {} meshes", mesh_count)
     logger.info("updating metadata: {}", paths["metadata"])
     update_metadata(
         paths["metadata"],
         world_name,
         {
-            "mesh": mesh_metadata(mesh_count, paths["mesh"]),
+            "mesh": mesh_metadata(mesh_count, paths["mesh"], z_offset_m),
         },
     )
     click.echo(f"created {mesh_count} meshes in {paths['mesh']}")
