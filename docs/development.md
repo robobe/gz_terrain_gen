@@ -76,7 +76,7 @@ Generated terrain artifacts should be written under `outputs/<world-name>/`:
 ```text
 outputs/demo_world/
 ├── metadata.json
-├── dem_1km.tif
+├── dem.tif
 ├── tiles/
 ├── mesh/
 └── gz/

@@ -54,15 +54,18 @@ Run the full pipeline from the repository root:
 
 ```bash
 export OPENTOPOGRAPHY_API_KEY=your_api_key
-uv run gz-terrain-gen all --world-name demo_world
+uv run gz-terrain-gen
+uv run gz-terrain-gen --world-name demo_world
 ```
 
-Generated artifacts are written under `outputs/<world-name>/` by default:
+Generated artifacts are written under `outputs/<world-name>/` by default. If the
+target world folder already exists, the CLI asks before removing it and
+continuing.
 
 ```text
 outputs/demo_world/
 ├── metadata.json
-├── dem_1km.tif
+├── dem.tif
 ├── tiles/
 ├── mesh/
 └── gz/
@@ -86,25 +89,23 @@ cd outputs/demo_world/gz
 ## CLI Commands
 
 ```bash
-uv run gz-terrain-gen download --world-name demo_world
-uv run gz-terrain-gen split --world-name demo_world
-uv run gz-terrain-gen mesh --world-name demo_world
-uv run gz-terrain-gen gazebo --world-name demo_world
-uv run gz-terrain-gen all --world-name demo_world
+uv run gz-terrain-gen
+uv run gz-terrain-gen --world-name demo_world
+uv run gz-terrain-gen --world-name demo_world --center-lat 30.853205 --center-lon 34.447382 --size-km 1.0
 ```
 
-Each command requires `--world-name` and accepts `--output-dir` to use a
-different generated artifact root. Use each subcommand's help for stage-specific
-paths:
+`--world-name` is optional and defaults to `terrain_world`. Use `--output-dir`
+to choose a different generated artifact root.
 
 ```bash
-uv run gz-terrain-gen split --world-name demo_world --help
+uv run gz-terrain-gen --help
 ```
 
 ## Project Layout
 
 ```text
 src/gz_terrain_gen/
+├── main.py
 ├── cli.py
 ├── opentopo.py
 ├── tiling.py

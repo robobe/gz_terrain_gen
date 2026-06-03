@@ -9,13 +9,7 @@ Run the full terrain pipeline:
 
 ```bash
 export OPENTOPOGRAPHY_API_KEY=your_api_key
-uv run gz-terrain-gen all --world-name demo_world
-```
-
-Or run only the Gazebo stage after DEM, tiles, and meshes already exist:
-
-```bash
-uv run gz-terrain-gen gazebo --world-name demo_world
+uv run gz-terrain-gen --world-name demo_world
 ```
 
 ## Run The Level World

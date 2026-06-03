@@ -56,7 +56,8 @@ uv run gz-terrain-gen --help
 
 ## Project Conventions
 
-- The CLI entrypoint is `gz-terrain-gen`.
+- The CLI entrypoint is `gz-terrain-gen`, defined as `gz_terrain_gen.main:main`.
+- `src/gz_terrain_gen/main.py` delegates to the Click app in `cli.py`.
 - Runtime dependencies are managed in `pyproject.toml` and locked in `uv.lock`.
 - The default generated artifact root is `outputs/`.
 - The default texture asset is `assets/texture/soil.jpg`.

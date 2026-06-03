@@ -15,7 +15,7 @@ artifacts are grouped by CLI world name under `outputs/<world-name>/`.
 ```text
 OpenTopography API
   -> outputs/<world-name>/metadata.json
-  -> outputs/<world-name>/dem_1km.tif
+  -> outputs/<world-name>/dem.tif
   -> outputs/<world-name>/tiles/tile_X_Y.tif
   -> outputs/<world-name>/tiles/tiles.csv
   -> outputs/<world-name>/mesh/tile_X_Y.dae
@@ -35,7 +35,7 @@ Responsibilities:
 - Reads `OPENTOPOGRAPHY_API_KEY`.
 - Uses CLI-provided or default center coordinates and area size.
 - Calls the OpenTopography `globaldem` endpoint for COP30 data.
-- Writes `outputs/<world-name>/dem_1km.tif` by default.
+- Writes `outputs/<world-name>/dem.tif` by default.
 - Records requested center, requested bounds, and DEM metadata in
   `outputs/<world-name>/metadata.json`.
 
@@ -45,7 +45,7 @@ Module: `src/gz_terrain_gen/tiling.py`
 
 Responsibilities:
 
-- Reads `outputs/<world-name>/dem_1km.tif` by default.
+- Reads `outputs/<world-name>/dem.tif` by default.
 - Converts a 200 m tile size into latitude/longitude degree increments.
 - Writes each tile to `outputs/<world-name>/tiles/tile_X_Y.tif`.
 - Writes `outputs/<world-name>/tiles/tiles.csv` with tile bounds and Gazebo
@@ -63,7 +63,7 @@ Module: `src/gz_terrain_gen/mesh.py`
 Responsibilities:
 
 - Reads `outputs/<world-name>/tiles/tiles.csv`.
-- Opens `outputs/<world-name>/dem_1km.tif` with GDAL.
+- Opens `outputs/<world-name>/dem.tif` with GDAL.
 - Samples the DEM using bilinear interpolation.
 - Builds a local mesh for each tile where X/Y are tile-local meters and Z is
   DEM elevation.
@@ -120,6 +120,7 @@ Important contract:
 
 ```text
 src/gz_terrain_gen/
+  main.py
   cli.py
   opentopo.py
   tiling.py

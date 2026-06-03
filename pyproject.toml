@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-gz-terrain-gen = "gz_terrain_gen.cli:main"
+gz-terrain-gen = "gz_terrain_gen.main:main"
 
 [build-system]
 requires = ["uv_build>=0.9.21,<0.10.0"]
