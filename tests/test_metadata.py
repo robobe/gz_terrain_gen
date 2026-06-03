@@ -39,6 +39,7 @@ def test_metadata_writes_expected_keys_and_elevation_stats(tmp_path) -> None:
     assert metadata["schema_version"] == 1
     assert metadata["world_name"] == "demo_world"
     assert metadata["request"]["center_lat"] == 30.9
+    assert metadata["request"]["source"] == "opentopography"
     assert metadata["dem"]["width_px"] == 2
     assert metadata["dem"]["height_px"] == 2
     assert metadata["dem"]["elevation"]["minimum_m"] == 10.0

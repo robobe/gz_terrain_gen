@@ -39,8 +39,9 @@ Responsibilities:
 - Reads `OPENTOPOGRAPHY_API_KEY`.
 - Uses CLI-provided or default center coordinates and area size.
 - Calls the OpenTopography `globaldem` endpoint for COP30 data.
-- Writes `outputs/<world-name>/dem.tif` by default.
-- Records requested center, requested bounds, and DEM metadata in
+- Can skip download and copy an existing GeoTIFF when `--dem-file` is provided.
+- Writes `outputs/<world-name>/dem.tif` by default in both modes.
+- Records requested center, requested bounds, DEM source, and DEM metadata in
   `outputs/<world-name>/metadata.json`.
 
 ### DEM Tiling
@@ -95,6 +96,8 @@ Responsibilities:
   terrain tile.
 - Creates `outputs/<world-name>/gz/single_tile_terrain.sdf` for simpler
   inspection.
+- Embeds `src/templates/gz_gui.xml` with a top-down `MinimalScene` camera above
+  the first tile and performer start position.
 - Creates a `level_probe` performer model and
   `outputs/<world-name>/gz/travel_levels.sh`.
 - Records Gazebo output paths and model count in `metadata.json`.
@@ -103,6 +106,8 @@ Important contract:
 
 - `gz sim --levels levels_terrain.sdf` uses the performer location to exercise
   Gazebo level loading.
+- GUI camera output is generated from source templates; manual edits under
+  `outputs/` should be treated as temporary.
 
 ### Browser Viewer
 

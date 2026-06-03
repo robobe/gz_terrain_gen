@@ -8,6 +8,7 @@ LEVEL_Z_CENTER_M = 0
 LEVEL_Z_SIZE_M = 200
 PROBE_MODEL = "level_probe"
 COLLADA_NS = "http://www.collada.org/2005/11/COLLADASchema"
+GUI_TEMPLATE = Path(__file__).parents[1] / "templates" / "gz_gui.xml"
 
 ET.register_namespace("", COLLADA_NS)
 
@@ -244,6 +245,70 @@ def tile_size_m(tile: dict[str, str]) -> tuple[float, float]:
     return width * 2.0, height * 2.0
 
 
+def dae_max_elevation(path: Path) -> float:
+    tree = ET.parse(path)
+    root = tree.getroot()
+    ns = {"c": COLLADA_NS}
+    positions = root.find(".//c:source/c:float_array", ns)
+    if positions is None or positions.text is None:
+        raise ValueError(f"missing Collada position array: {path}")
+
+    values = [float(value) for value in positions.text.split()]
+    if len(values) < 3:
+        return 0.0
+    return max(values[index] for index in range(2, len(values), 3))
+
+
+def terrain_max_elevation(mesh_dir: Path, tiles: list[dict[str, str]]) -> float:
+    max_elevation = 0.0
+    for tile in tiles:
+        mesh_path = mesh_dir / f"{Path(tile['file']).stem}.dae"
+        if not mesh_path.exists():
+            continue
+        max_elevation = max(max_elevation, dae_max_elevation(mesh_path))
+    return max_elevation
+
+
+def terrain_footprint_m(tiles: list[dict[str, str]]) -> tuple[float, float]:
+    if not tiles:
+        return 0.0, 0.0
+
+    west = min(float(tile["gazebo_corner_x_m"]) for tile in tiles)
+    south = min(float(tile["gazebo_corner_y_m"]) for tile in tiles)
+    east = max(float(tile["gazebo_center_x_m"]) * 2.0 - float(tile["gazebo_corner_x_m"]) for tile in tiles)
+    north = max(float(tile["gazebo_center_y_m"]) * 2.0 - float(tile["gazebo_corner_y_m"]) for tile in tiles)
+    return east - west, north - south
+
+
+def camera_height_m(tiles: list[dict[str, str]], max_elevation_m: float) -> float:
+    size_x, size_y = terrain_footprint_m(tiles)
+    clearance = max(100.0, max(size_x, size_y) * 0.75)
+    return max_elevation_m + clearance
+
+
+def camera_pose(tiles: list[dict[str, str]], max_elevation_m: float) -> str:
+    if tiles:
+        x = float(tiles[0]["gazebo_center_x_m"])
+        y = float(tiles[0]["gazebo_center_y_m"])
+    else:
+        x = 0.0
+        y = 0.0
+    z = camera_height_m(tiles, max_elevation_m)
+    return f"{x:.3f} {y:.3f} {z:.3f} 0 1.5708 0"
+
+
+def render_gui(camera_pose_value: str, template_path: Path = GUI_TEMPLATE) -> str:
+    gui = ET.parse(template_path).getroot()
+    minimal_scene = gui.find(".//plugin[@filename='MinimalScene']")
+    if minimal_scene is None:
+        raise ValueError(f"missing MinimalScene plugin in GUI template: {template_path}")
+    camera_pose_tag = minimal_scene.find("camera_pose")
+    if camera_pose_tag is None:
+        raise ValueError(f"missing camera_pose tag in GUI template: {template_path}")
+    camera_pose_tag.text = camera_pose_value
+    return ET.tostring(gui, encoding="unicode")
+
+
 def create_models(tiles: list[dict[str, str]], mesh_dir: Path, texture: Path, models_dir: Path) -> None:
     models_dir.mkdir(parents=True, exist_ok=True)
 
@@ -268,7 +333,7 @@ def create_models(tiles: list[dict[str, str]], mesh_dir: Path, texture: Path, mo
     write_probe_model(models_dir)
 
 
-def world_sdf(tiles: list[dict[str, str]], world_name: str) -> str:
+def world_sdf(tiles: list[dict[str, str]], world_name: str, max_elevation_m: float = 0.0) -> str:
     includes = []
     levels = []
 
@@ -306,6 +371,7 @@ def world_sdf(tiles: list[dict[str, str]], world_name: str) -> str:
     levels_xml = "\n\n".join(levels)
     first_x = float(tiles[0]["gazebo_center_x_m"])
     first_y = float(tiles[0]["gazebo_center_y_m"])
+    gui_xml = render_gui(camera_pose(tiles, max_elevation_m))
 
     return f"""<?xml version="1.0"?>
 <sdf version="1.10">
@@ -318,6 +384,9 @@ def world_sdf(tiles: list[dict[str, str]], world_name: str) -> str:
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-rendering-system" name="gz::sim::systems::Rendering"/>
+
+{gui_xml}
 
     <light name="sun" type="directional">
       <cast_shadows>true</cast_shadows>
@@ -352,8 +421,18 @@ def world_sdf(tiles: list[dict[str, str]], world_name: str) -> str:
 """
 
 
-def single_world_sdf() -> str:
-    return """<?xml version="1.0"?>
+def single_world_sdf(tiles: list[dict[str, str]] | None = None, max_elevation_m: float = 0.0) -> str:
+    if tiles:
+        first_x = float(tiles[0]["gazebo_center_x_m"])
+        first_y = float(tiles[0]["gazebo_center_y_m"])
+        camera_tiles = tiles[:1]
+    else:
+        first_x = 0.0
+        first_y = 0.0
+        camera_tiles = []
+    gui_xml = render_gui(camera_pose(camera_tiles, max_elevation_m))
+
+    return f"""<?xml version="1.0"?>
 <sdf version="1.10">
   <world name="single_tile_terrain">
     <physics name="default_physics" type="ignored">
@@ -364,6 +443,9 @@ def single_world_sdf() -> str:
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-rendering-system" name="gz::sim::systems::Rendering"/>
+
+{gui_xml}
 
     <light name="sun" type="directional">
       <cast_shadows>true</cast_shadows>
@@ -376,7 +458,7 @@ def single_world_sdf() -> str:
     <include>
       <name>terrain_tile_0_0</name>
       <uri>model://terrain_tile_0_0</uri>
-      <pose>0 0 0 0 0 0</pose>
+      <pose>{first_x:.3f} {first_y:.3f} 0 0 0 0</pose>
     </include>
   </world>
 </sdf>
@@ -456,12 +538,13 @@ def generate_gazebo_worlds(manifest_path: Path, mesh_dir: Path, texture: Path, g
     if not tiles:
         raise RuntimeError(f"tile manifest is empty: {manifest_path}")
 
+    max_elevation_m = terrain_max_elevation(mesh_dir, tiles)
     models_dir = gz_dir / "models"
     create_models(tiles, mesh_dir, texture, models_dir)
     gz_dir.mkdir(parents=True, exist_ok=True)
 
-    (gz_dir / "levels_terrain.sdf").write_text(world_sdf(tiles, world_name))
-    (gz_dir / "single_tile_terrain.sdf").write_text(single_world_sdf())
+    (gz_dir / "levels_terrain.sdf").write_text(world_sdf(tiles, world_name, max_elevation_m))
+    (gz_dir / "single_tile_terrain.sdf").write_text(single_world_sdf(tiles, max_elevation_m))
     travel_path = gz_dir / "travel_levels.sh"
     travel_path.write_text(travel_script(tiles, world_name))
     travel_path.chmod(0o755)

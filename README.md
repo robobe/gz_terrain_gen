@@ -52,6 +52,15 @@ uv run gz-terrain-gen
 uv run gz-terrain-gen --world-name demo_world
 ```
 
+Use an existing GeoTIFF DEM instead of downloading from OpenTopography:
+
+```bash
+uv run gz-terrain-gen --world-name demo_world --dem-file /path/to/dem.tif
+```
+
+When `--dem-file` is provided, `OPENTOPOGRAPHY_API_KEY` is not required. The DEM
+is copied into `outputs/<world-name>/dem.tif` and used by all later stages.
+
 Generated artifacts are written under `outputs/<world-name>/` by default. If the
 target world folder already exists, the CLI asks before removing it and
 continuing. Mesh Z values are normalized so the minimum terrain elevation aligns
@@ -100,6 +109,7 @@ cd outputs/demo_world/gz
 uv run gz-terrain-gen
 uv run gz-terrain-gen --world-name demo_world
 uv run gz-terrain-gen --world-name demo_world --center-lat 30.853205 --center-lon 34.447382 --size-km 1.0
+uv run gz-terrain-gen --world-name demo_world --dem-file /path/to/dem.tif
 uv run gz-terrain-gen-viewer --world-name demo_world
 ```
 

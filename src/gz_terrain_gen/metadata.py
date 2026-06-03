@@ -51,14 +51,20 @@ def requested_area_metadata(
     center_lon: float,
     size_km: float,
     dem_type: str,
+    source: str = "opentopography",
+    source_path: Path | None = None,
 ) -> dict[str, Any]:
-    return {
+    metadata = {
         "center_lat": center_lat,
         "center_lon": center_lon,
         "size_km": size_km,
         "dem_type": dem_type,
         "bounds": bounds_for_square(center_lat, center_lon, size_km),
+        "source": source,
     }
+    if source_path is not None:
+        metadata["source_path"] = str(source_path)
+    return metadata
 
 
 def dem_metadata(path: Path) -> dict[str, Any]:

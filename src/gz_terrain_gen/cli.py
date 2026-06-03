@@ -5,6 +5,7 @@ from pathlib import Path
 import click
 from loguru import logger
 
+from gz_terrain_gen import __version__
 from gz_terrain_gen.gazebo import generate_gazebo_worlds
 from gz_terrain_gen.log_config import LOG_LEVELS, configure_logging
 from gz_terrain_gen.mesh import generate_meshes, open_dem, source_z_offset
@@ -71,6 +72,77 @@ def viewer_command(world_name: str, output_dir: Path) -> str:
     return command
 
 
+def format_start_banner(version: str, world_name: str, world_dir: Path) -> str:
+    return "\n".join(
+        [
+            "GZ Terrain Generator",
+            f"Version: {version}",
+            f"World: {world_name}",
+            f"Output: {world_dir}",
+        ]
+    )
+
+
+def format_number(value: object, precision: int = 3) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return f"{value:.{precision}f}"
+    return str(value)
+
+
+def format_completion_summary(metadata: dict, metadata_path: Path) -> str:
+    request = metadata.get("request", {})
+    dem = metadata.get("dem", {})
+    elevation = dem.get("elevation", {})
+    bounds = request.get("bounds", {})
+    mesh = metadata.get("mesh", {})
+    tiles = metadata.get("tiles", {})
+    gazebo = metadata.get("gazebo", {})
+    viewer = metadata.get("viewer", {})
+    size_km = request.get("size_km")
+
+    return "\n".join(
+        [
+            "Generation Summary",
+            f"World: {metadata.get('world_name', 'n/a')}",
+            f"Area: {format_number(size_km, 3)} km x {format_number(size_km, 3)} km",
+            f"Center: {format_number(request.get('center_lat'), 6)}, {format_number(request.get('center_lon'), 6)}",
+            (
+                "Bounds: "
+                f"west={format_number(bounds.get('west'), 6)}, "
+                f"south={format_number(bounds.get('south'), 6)}, "
+                f"east={format_number(bounds.get('east'), 6)}, "
+                f"north={format_number(bounds.get('north'), 6)}"
+            ),
+            (
+                "Elevation: "
+                f"min={format_number(elevation.get('minimum_m'), 3)} m, "
+                f"max={format_number(elevation.get('maximum_m'), 3)} m, "
+                f"mean={format_number(elevation.get('mean_m'), 3)} m"
+            ),
+            (
+                "Z normalization: "
+                f"{'enabled' if mesh.get('normalized_to_gazebo_z_zero') else 'disabled'}, "
+                f"offset={format_number(mesh.get('z_offset_m'), 3)} m"
+            ),
+            f"Tiles: {format_number(tiles.get('count'))} at {format_number(tiles.get('tile_m'))} m",
+            f"Meshes: {format_number(mesh.get('count'))}",
+            f"Gazebo models: {format_number(gazebo.get('model_count'))}",
+            f"Viewer: {viewer.get('html_path', 'n/a')}",
+            f"Metadata: {metadata_path}",
+        ]
+    )
+
+
+def echo_banner(text: str) -> None:
+    click.echo()
+    click.echo(text)
+    click.echo()
+
+
 def run_pipeline(
     world_name: str,
     output_dir: Path,
@@ -79,32 +151,56 @@ def run_pipeline(
     size_km: float,
     tile_m: int,
     texture: Path,
+    dem_file: Path | None = None,
 ) -> dict[str, Path]:
     paths = default_paths(output_dir, world_name)
     logger.info("starting full terrain pipeline for world {}", world_name)
     logger.debug("resolved world output directory: {}", paths["world"])
     logger.debug("download request center=({}, {}) size_km={}", center_lat, center_lon, size_km)
 
-    logger.info("starting DEM download for world {}", world_name)
-    download_dem(paths["dem"], center_lat=center_lat, center_lon=center_lon, size_km=size_km)
-    logger.info("completed DEM download: {}", paths["dem"])
+    if dem_file is None:
+        logger.info("starting DEM download for world {}", world_name)
+        download_dem(paths["dem"], center_lat=center_lat, center_lon=center_lon, size_km=size_km)
+        logger.info("completed DEM download: {}", paths["dem"])
+        request_metadata = requested_area_metadata(
+            center_lat,
+            center_lon,
+            size_km,
+            DEFAULT_DEM_TYPE,
+            source="opentopography",
+        )
+        click.echo(f"DEM saved to {paths['dem']}")
+    else:
+        logger.info("using existing DEM file for world {}: {}", world_name, dem_file)
+        paths["dem"].parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(dem_file, paths["dem"])
+        logger.info("copied DEM from {} to {}", dem_file, paths["dem"])
+        request_metadata = requested_area_metadata(
+            center_lat,
+            center_lon,
+            size_km,
+            DEFAULT_DEM_TYPE,
+            source="local_file",
+            source_path=dem_file,
+        )
+        click.echo(f"DEM copied from {dem_file} to {paths['dem']}")
+
     logger.info("updating metadata: {}", paths["metadata"])
-    update_metadata(
+    metadata = update_metadata(
         paths["metadata"],
         world_name,
         {
-            "request": requested_area_metadata(center_lat, center_lon, size_km, DEFAULT_DEM_TYPE),
+            "request": request_metadata,
             "dem": dem_metadata(paths["dem"]),
         },
     )
-    click.echo(f"DEM saved to {paths['dem']}")
 
     logger.info("starting DEM split for world {}", world_name)
     logger.debug("tile output directory: {}", paths["tiles"])
     tile_count, manifest = split_dem(paths["dem"], paths["tiles"], tile_m)
     logger.info("completed DEM split: {} tiles", tile_count)
     logger.info("updating metadata: {}", paths["metadata"])
-    update_metadata(
+    metadata = update_metadata(
         paths["metadata"],
         world_name,
         {
@@ -121,7 +217,7 @@ def run_pipeline(
     logger.info("normalized mesh Z values by subtracting {:.3f} m", z_offset_m)
     logger.info("completed mesh generation: {} meshes", mesh_count)
     logger.info("updating metadata: {}", paths["metadata"])
-    update_metadata(
+    metadata = update_metadata(
         paths["metadata"],
         world_name,
         {
@@ -135,7 +231,7 @@ def run_pipeline(
     model_count = generate_gazebo_worlds(paths["manifest"], paths["mesh"], texture, paths["gz"], world_name)
     logger.info("completed Gazebo generation: {} models", model_count)
     logger.info("updating metadata: {}", paths["metadata"])
-    update_metadata(
+    metadata = update_metadata(
         paths["metadata"],
         world_name,
         {
@@ -149,7 +245,7 @@ def run_pipeline(
     viewer_info = generate_viewer(paths["dem"], paths["tiles"], paths["manifest"], paths["viewer"])
     logger.info("completed browser viewer generation for world {}", world_name)
     logger.info("updating metadata: {}", paths["metadata"])
-    update_metadata(
+    metadata = update_metadata(
         paths["metadata"],
         world_name,
         {
@@ -159,6 +255,7 @@ def run_pipeline(
     click.echo(f"created viewer: {paths['viewer'] / 'index.html'}")
     click.echo(f"serve viewer: {viewer_command(world_name, output_dir)}")
     click.echo(f"metadata: {paths['metadata']}")
+    echo_banner(format_completion_summary(metadata, paths["metadata"]))
     logger.info("completed full terrain pipeline for world {}", world_name)
     return paths
 
@@ -190,6 +287,11 @@ def run_pipeline(
 @click.option("--size-km", type=float, default=DEFAULT_SIZE_KM, show_default=True)
 @click.option("--tile-m", type=int, default=DEFAULT_TILE_M, show_default=True)
 @click.option(
+    "--dem-file",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    help="Use an existing GeoTIFF DEM instead of downloading one.",
+)
+@click.option(
     "--texture",
     type=click.Path(path_type=Path, dir_okay=False),
     default=DEFAULT_TEXTURE,
@@ -203,9 +305,11 @@ def cli(
     center_lon: float,
     size_km: float,
     tile_m: int,
+    dem_file: Path | None,
     texture: Path,
 ) -> None:
     configure_logging(log_level)
     paths = default_paths(output_dir, world_name)
     reset_existing_world_output(paths["world"])
-    run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, texture)
+    echo_banner(format_start_banner(__version__, world_name, paths["world"]))
+    run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, texture, dem_file)

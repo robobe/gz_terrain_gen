@@ -1,9 +1,12 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
+import rasterio
 from click.testing import CliRunner
+from rasterio.transform import from_origin
 
-from gz_terrain_gen.cli import DEFAULT_WORLD_NAME, cli, default_paths
+from gz_terrain_gen.cli import DEFAULT_WORLD_NAME, cli, default_paths, format_completion_summary, format_start_banner
 from gz_terrain_gen.main import main
 from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR
 from gz_terrain_gen.paths import validate_world_name
@@ -21,7 +24,24 @@ def test_cli_help_loads_without_subcommands() -> None:
     assert "--tile-m" in result.output
     assert "--texture" in result.output
     assert "--output-dir" in result.output
+    assert "--dem-file" in result.output
     assert "Commands:" not in result.output
+
+
+def write_test_dem(path: Path) -> None:
+    data = np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32)
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=2,
+        width=2,
+        count=1,
+        dtype=data.dtype,
+        crs="EPSG:4326",
+        transform=from_origin(34.0, 31.0, 0.1, 0.1),
+    ) as dst:
+        dst.write(data, 1)
 
 
 def test_default_paths_resolve_under_world_output() -> None:
@@ -34,6 +54,70 @@ def test_default_paths_resolve_under_world_output() -> None:
     assert paths["mesh"] == DEFAULT_OUTPUT_DIR / "demo" / "mesh"
     assert paths["gz"] == DEFAULT_OUTPUT_DIR / "demo" / "gz"
     assert paths["viewer"] == DEFAULT_OUTPUT_DIR / "demo" / "viewer"
+
+
+def test_start_banner_contains_version_world_and_output(tmp_path: Path) -> None:
+    banner = format_start_banner("0.1.0", "demo_world", tmp_path / "demo_world")
+
+    assert "GZ Terrain Generator" in banner
+    assert "Version: 0.1.0" in banner
+    assert "World: demo_world" in banner
+    assert f"Output: {tmp_path / 'demo_world'}" in banner
+
+
+def test_completion_summary_contains_generated_result(tmp_path: Path) -> None:
+    metadata_path = tmp_path / "demo_world" / "metadata.json"
+    metadata = {
+        "world_name": "demo_world",
+        "request": {
+            "center_lat": 30.611505,
+            "center_lon": 34.808504,
+            "size_km": 2.0,
+            "bounds": {
+                "west": 34.7,
+                "south": 30.5,
+                "east": 34.9,
+                "north": 30.7,
+            },
+        },
+        "dem": {
+            "elevation": {
+                "minimum_m": 100.0,
+                "maximum_m": 240.25,
+                "mean_m": 150.5,
+            }
+        },
+        "mesh": {
+            "count": 4,
+            "normalized_to_gazebo_z_zero": True,
+            "z_offset_m": 100.0,
+        },
+        "tiles": {
+            "count": 4,
+            "tile_m": 200,
+        },
+        "gazebo": {
+            "model_count": 4,
+        },
+        "viewer": {
+            "html_path": str(tmp_path / "demo_world" / "viewer" / "index.html"),
+        },
+    }
+
+    summary = format_completion_summary(metadata, metadata_path)
+
+    assert "Generation Summary" in summary
+    assert "World: demo_world" in summary
+    assert "Area: 2.000 km x 2.000 km" in summary
+    assert "Center: 30.611505, 34.808504" in summary
+    assert "Bounds: west=34.700000, south=30.500000, east=34.900000, north=30.700000" in summary
+    assert "Elevation: min=100.000 m, max=240.250 m, mean=150.500 m" in summary
+    assert "Z normalization: enabled, offset=100.000 m" in summary
+    assert "Tiles: 4 at 200 m" in summary
+    assert "Meshes: 4" in summary
+    assert "Gazebo models: 4" in summary
+    assert f"Viewer: {tmp_path / 'demo_world' / 'viewer' / 'index.html'}" in summary
+    assert f"Metadata: {metadata_path}" in summary
 
 
 def test_validate_world_name_accepts_expected_names() -> None:
@@ -50,9 +134,10 @@ def test_validate_world_name_rejects_unsafe_names(world_name: str) -> None:
 def test_world_name_defaults_to_terrain_world(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     captured = {}
 
-    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, texture):
+    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, texture, dem_file):
         captured["world_name"] = world_name
         captured["output_dir"] = output_dir
+        captured["dem_file"] = dem_file
         return default_paths(output_dir, world_name)
 
     monkeypatch.setattr("gz_terrain_gen.cli.run_pipeline", fake_run_pipeline)
@@ -62,6 +147,10 @@ def test_world_name_defaults_to_terrain_world(monkeypatch: pytest.MonkeyPatch, t
     assert result.exit_code == 0
     assert captured["world_name"] == DEFAULT_WORLD_NAME
     assert captured["output_dir"] == tmp_path
+    assert captured["dem_file"] is None
+    assert "GZ Terrain Generator" in result.output
+    assert "Version: 0.1.0" in result.output
+    assert f"Output: {tmp_path / DEFAULT_WORLD_NAME}" in result.output
 
 
 def test_cli_rejects_invalid_world_name() -> None:
@@ -102,7 +191,7 @@ def test_existing_world_folder_confirm_removes_before_pipeline(monkeypatch: pyte
     marker.write_text("remove")
     captured = {}
 
-    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, texture):
+    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, texture, dem_file):
         captured["world_exists"] = (output_dir / world_name).exists()
         return default_paths(output_dir, world_name)
 
@@ -117,6 +206,69 @@ def test_existing_world_folder_confirm_removes_before_pipeline(monkeypatch: pyte
     assert result.exit_code == 0
     assert captured["world_exists"] is False
     assert not marker.exists()
+
+
+def test_cli_passes_existing_dem_file_to_pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    dem_path = tmp_path / "input.tif"
+    write_test_dem(dem_path)
+    captured = {}
+
+    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, texture, dem_file):
+        captured["dem_file"] = dem_file
+        return default_paths(output_dir, world_name)
+
+    monkeypatch.setattr("gz_terrain_gen.cli.run_pipeline", fake_run_pipeline)
+
+    result = CliRunner().invoke(
+        cli,
+        ["--output-dir", str(tmp_path / "outputs"), "--dem-file", str(dem_path)],
+    )
+
+    assert result.exit_code == 0
+    assert captured["dem_file"] == dem_path
+
+
+def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from gz_terrain_gen.cli import run_pipeline
+
+    dem_path = tmp_path / "source.tif"
+    output_dir = tmp_path / "outputs"
+    write_test_dem(dem_path)
+
+    def fail_download(*args, **kwargs):
+        raise AssertionError("download_dem should not be called")
+
+    monkeypatch.setattr("gz_terrain_gen.cli.download_dem", fail_download)
+    monkeypatch.setattr("gz_terrain_gen.cli.split_dem", lambda dem, tiles, tile_m: (0, tiles / "tiles.csv"))
+    monkeypatch.setattr("gz_terrain_gen.cli.generate_meshes", lambda source_dem, tiles_dir, manifest_path, mesh_dir: 0)
+    monkeypatch.setattr("gz_terrain_gen.cli.generate_gazebo_worlds", lambda manifest, mesh, texture, gz, world: 0)
+    monkeypatch.setattr(
+        "gz_terrain_gen.cli.generate_viewer",
+        lambda source_dem, tiles_dir, manifest_path, viewer_dir: {
+            "viewer_dir": viewer_dir,
+            "glb_path": viewer_dir / "terrain.glb",
+            "html_path": viewer_dir / "index.html",
+            "vertex_count": 0,
+            "face_count": 0,
+        },
+    )
+
+    paths = run_pipeline(
+        "demo",
+        output_dir,
+        30.0,
+        34.0,
+        1.0,
+        200,
+        tmp_path / "texture.jpg",
+        dem_path,
+    )
+
+    assert paths["dem"].exists()
+    assert paths["dem"].read_bytes() == dem_path.read_bytes()
+    metadata = paths["metadata"].read_text()
+    assert '"source": "local_file"' in metadata
+    assert f'"source_path": "{dem_path}"' in metadata
 
 
 def test_log_level_option_works() -> None:

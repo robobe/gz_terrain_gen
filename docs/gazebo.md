@@ -1,7 +1,9 @@
 # Gazebo Usage
 
 The Gazebo stage creates model folders, worlds, and a travel script under
-`outputs/<world-name>/gz/`.
+`outputs/<world-name>/gz/`. Generated worlds embed the GUI template from
+`src/templates/gz_gui.xml` with a top-down camera above the first tile and
+performer start position.
 
 ## Generate Gazebo Files
 
@@ -10,6 +12,12 @@ Run the full terrain pipeline:
 ```bash
 export OPENTOPOGRAPHY_API_KEY=your_api_key
 uv run gz-terrain-gen --world-name demo_world
+```
+
+Or use an existing GeoTIFF DEM without an OpenTopography API key:
+
+```bash
+uv run gz-terrain-gen --world-name demo_world --dem-file /path/to/dem.tif
 ```
 
 ## Run The Level World
@@ -45,3 +53,6 @@ outputs/demo_world/gz/
 
 Without `--levels`, Gazebo loads every model at startup, so level load/unload
 behavior is not exercised.
+
+Rerun `uv run gz-terrain-gen --world-name <name>` to regenerate SDF files after
+changing the GUI template or camera logic.
