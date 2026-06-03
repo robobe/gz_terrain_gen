@@ -1,21 +1,27 @@
 # Architecture
 
-This project is now a packaged Python application managed by `uv`. The CLI
-command `gz-terrain-gen` runs a staged terrain-generation pipeline. Each stage
-reads files written by the previous stage and writes the next set of terrain
-artifacts under `outputs/` by default.
+This project creates terrain layouts for Gazebo from real elevation data. It
+downloads a DEM from a source such as OpenTopography, splits the DEM into
+smaller terrain tiles for Gazebo performance, converts each tile into a Collada
+`.dae` mesh, and wraps each mesh in a Gazebo model with visual, collision, and
+texture data.
+
+The application also creates Gazebo worlds with level definitions. Those levels
+can load and unload terrain models based on the performer position. Generated
+artifacts are grouped by CLI world name under `outputs/<world-name>/`.
 
 ## Data Flow
 
 ```text
 OpenTopography API
-  -> outputs/dem_1km.tif
-  -> outputs/tiles/tile_X_Y.tif
-  -> outputs/tiles/tiles.csv
-  -> outputs/mesh/tile_X_Y.dae
-  -> outputs/gz/models/terrain_tile_X_Y/
-  -> outputs/gz/levels_terrain.sdf
-  -> outputs/gz/travel_levels.sh
+  -> outputs/<world-name>/metadata.json
+  -> outputs/<world-name>/dem_1km.tif
+  -> outputs/<world-name>/tiles/tile_X_Y.tif
+  -> outputs/<world-name>/tiles/tiles.csv
+  -> outputs/<world-name>/mesh/tile_X_Y.dae
+  -> outputs/<world-name>/gz/models/terrain_tile_X_Y/
+  -> outputs/<world-name>/gz/levels_terrain.sdf
+  -> outputs/<world-name>/gz/travel_levels.sh
 ```
 
 ## Components
@@ -27,9 +33,11 @@ Module: `src/gz_terrain_gen/opentopo.py`
 Responsibilities:
 
 - Reads `OPENTOPOGRAPHY_API_KEY`.
-- Defines a hard-coded center point and square area.
+- Uses CLI-provided or default center coordinates and area size.
 - Calls the OpenTopography `globaldem` endpoint for COP30 data.
-- Writes `outputs/dem_1km.tif` by default.
+- Writes `outputs/<world-name>/dem_1km.tif` by default.
+- Records requested center, requested bounds, and DEM metadata in
+  `outputs/<world-name>/metadata.json`.
 
 ### DEM Tiling
 
@@ -37,10 +45,12 @@ Module: `src/gz_terrain_gen/tiling.py`
 
 Responsibilities:
 
-- Reads `outputs/dem_1km.tif` by default.
+- Reads `outputs/<world-name>/dem_1km.tif` by default.
 - Converts a 200 m tile size into latitude/longitude degree increments.
-- Writes each tile to `outputs/tiles/tile_X_Y.tif`.
-- Writes `outputs/tiles/tiles.csv` with tile bounds and Gazebo placement metadata.
+- Writes each tile to `outputs/<world-name>/tiles/tile_X_Y.tif`.
+- Writes `outputs/<world-name>/tiles/tiles.csv` with tile bounds and Gazebo
+  placement metadata.
+- Records tile size, tile count, and manifest path in `metadata.json`.
 
 Important contract:
 
@@ -52,12 +62,13 @@ Module: `src/gz_terrain_gen/mesh.py`
 
 Responsibilities:
 
-- Reads `outputs/tiles/tiles.csv`.
-- Opens `outputs/dem_1km.tif` with GDAL.
+- Reads `outputs/<world-name>/tiles/tiles.csv`.
+- Opens `outputs/<world-name>/dem_1km.tif` with GDAL.
 - Samples the DEM using bilinear interpolation.
 - Builds a local mesh for each tile where X/Y are tile-local meters and Z is
   DEM elevation.
-- Writes `outputs/mesh/tile_X_Y.dae`.
+- Writes `outputs/<world-name>/mesh/tile_X_Y.dae`.
+- Records mesh count and mesh directory in `metadata.json`.
 
 Important contract:
 
@@ -70,13 +81,17 @@ Module: `src/gz_terrain_gen/gazebo.py`
 
 Responsibilities:
 
-- Reads `outputs/mesh/*.dae`, `outputs/tiles/tiles.csv`, and
+- Reads `outputs/<world-name>/mesh/*.dae`, `outputs/<world-name>/tiles/tiles.csv`, and
   `assets/texture/soil.jpg` by default.
 - Adds flat normals and UVs to each Collada mesh.
 - Creates one Gazebo model per terrain tile.
-- Creates `outputs/gz/levels_terrain.sdf` with a level for each terrain tile.
-- Creates `outputs/gz/single_tile_terrain.sdf` for simpler inspection.
-- Creates a `level_probe` performer model and `outputs/gz/travel_levels.sh`.
+- Creates `outputs/<world-name>/gz/levels_terrain.sdf` with a level for each
+  terrain tile.
+- Creates `outputs/<world-name>/gz/single_tile_terrain.sdf` for simpler
+  inspection.
+- Creates a `level_probe` performer model and
+  `outputs/<world-name>/gz/travel_levels.sh`.
+- Records Gazebo output paths and model count in `metadata.json`.
 
 Important contract:
 
@@ -109,13 +124,15 @@ src/gz_terrain_gen/
   opentopo.py
   tiling.py
   mesh.py
+  metadata.py
   gazebo.py
   paths.py
 ```
 
 - A CLI command controls the whole pipeline.
 - All paths are explicit and configurable.
-- Generated artifacts go under `outputs/` or another configured directory.
+- Generated artifacts go under `outputs/<world-name>/` or another configured
+  output root.
 - Unit tests cover manifest generation, interpolation, mesh topology, and SDF
   generation without needing Gazebo.
 

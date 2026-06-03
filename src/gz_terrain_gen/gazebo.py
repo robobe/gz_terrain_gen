@@ -268,7 +268,7 @@ def create_models(tiles: list[dict[str, str]], mesh_dir: Path, texture: Path, mo
     write_probe_model(models_dir)
 
 
-def world_sdf(tiles: list[dict[str, str]]) -> str:
+def world_sdf(tiles: list[dict[str, str]], world_name: str) -> str:
     includes = []
     levels = []
 
@@ -309,7 +309,7 @@ def world_sdf(tiles: list[dict[str, str]]) -> str:
 
     return f"""<?xml version="1.0"?>
 <sdf version="1.10">
-  <world name="dem_mesh_levels">
+  <world name="{world_name}">
     <physics name="default_physics" type="ignored">
       <max_step_size>0.001</max_step_size>
       <real_time_factor>1.0</real_time_factor>
@@ -383,12 +383,12 @@ def single_world_sdf() -> str:
 """
 
 
-def travel_script(tiles: list[dict[str, str]]) -> str:
+def travel_script(tiles: list[dict[str, str]], world_name: str) -> str:
     commands = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         "",
-        'WORLD="${1:-dem_mesh_levels}"',
+        f'WORLD="${{1:-{world_name}}}"',
         'Z="${Z:-80}"',
         'SLEEP_S="${SLEEP_S:-1.0}"',
         'SERVICE="/world/${WORLD}/set_pose"',
@@ -446,7 +446,7 @@ behavior is not exercised.
 """
 
 
-def generate_gazebo_worlds(manifest_path: Path, mesh_dir: Path, texture: Path, gz_dir: Path) -> int:
+def generate_gazebo_worlds(manifest_path: Path, mesh_dir: Path, texture: Path, gz_dir: Path, world_name: str) -> int:
     if not manifest_path.exists():
         raise FileNotFoundError(f"missing tile manifest: {manifest_path}")
     if not texture.exists():
@@ -460,10 +460,10 @@ def generate_gazebo_worlds(manifest_path: Path, mesh_dir: Path, texture: Path, g
     create_models(tiles, mesh_dir, texture, models_dir)
     gz_dir.mkdir(parents=True, exist_ok=True)
 
-    (gz_dir / "levels_terrain.sdf").write_text(world_sdf(tiles))
+    (gz_dir / "levels_terrain.sdf").write_text(world_sdf(tiles, world_name))
     (gz_dir / "single_tile_terrain.sdf").write_text(single_world_sdf())
     travel_path = gz_dir / "travel_levels.sh"
-    travel_path.write_text(travel_script(tiles))
+    travel_path.write_text(travel_script(tiles, world_name))
     travel_path.chmod(0o755)
     (gz_dir / "README.md").write_text(readme_text())
     return len(tiles)

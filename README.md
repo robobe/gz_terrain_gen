@@ -54,13 +54,14 @@ Run the full pipeline from the repository root:
 
 ```bash
 export OPENTOPOGRAPHY_API_KEY=your_api_key
-uv run gz-terrain-gen all
+uv run gz-terrain-gen all --world-name demo_world
 ```
 
-Generated artifacts are written under `outputs/` by default:
+Generated artifacts are written under `outputs/<world-name>/` by default:
 
 ```text
-outputs/
+outputs/demo_world/
+├── metadata.json
 ├── dem_1km.tif
 ├── tiles/
 ├── mesh/
@@ -70,7 +71,7 @@ outputs/
 Run the generated Gazebo world:
 
 ```bash
-cd outputs/gz
+cd outputs/demo_world/gz
 export GZ_SIM_RESOURCE_PATH=$PWD/models
 gz sim --levels levels_terrain.sdf
 ```
@@ -78,25 +79,26 @@ gz sim --levels levels_terrain.sdf
 In a second terminal:
 
 ```bash
-cd outputs/gz
+cd outputs/demo_world/gz
 ./travel_levels.sh
 ```
 
 ## CLI Commands
 
 ```bash
-uv run gz-terrain-gen download
-uv run gz-terrain-gen split
-uv run gz-terrain-gen mesh
-uv run gz-terrain-gen gazebo
-uv run gz-terrain-gen all
+uv run gz-terrain-gen download --world-name demo_world
+uv run gz-terrain-gen split --world-name demo_world
+uv run gz-terrain-gen mesh --world-name demo_world
+uv run gz-terrain-gen gazebo --world-name demo_world
+uv run gz-terrain-gen all --world-name demo_world
 ```
 
-Each command accepts `--output-dir` to use a different generated artifact root.
-Use each subcommand's help for stage-specific paths:
+Each command requires `--world-name` and accepts `--output-dir` to use a
+different generated artifact root. Use each subcommand's help for stage-specific
+paths:
 
 ```bash
-uv run gz-terrain-gen split --help
+uv run gz-terrain-gen split --world-name demo_world --help
 ```
 
 ## Project Layout
@@ -107,6 +109,7 @@ src/gz_terrain_gen/
 ├── opentopo.py
 ├── tiling.py
 ├── mesh.py
+├── metadata.py
 └── gazebo.py
 ```
 

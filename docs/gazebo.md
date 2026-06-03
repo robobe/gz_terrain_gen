@@ -1,7 +1,7 @@
 # Gazebo Usage
 
 The Gazebo stage creates model folders, worlds, and a travel script under
-`outputs/gz/`.
+`outputs/<world-name>/gz/`.
 
 ## Generate Gazebo Files
 
@@ -9,13 +9,13 @@ Run the full terrain pipeline:
 
 ```bash
 export OPENTOPOGRAPHY_API_KEY=your_api_key
-uv run gz-terrain-gen all
+uv run gz-terrain-gen all --world-name demo_world
 ```
 
 Or run only the Gazebo stage after DEM, tiles, and meshes already exist:
 
 ```bash
-uv run gz-terrain-gen gazebo
+uv run gz-terrain-gen gazebo --world-name demo_world
 ```
 
 ## Run The Level World
@@ -23,7 +23,7 @@ uv run gz-terrain-gen gazebo
 From the generated Gazebo directory:
 
 ```bash
-cd outputs/gz
+cd outputs/demo_world/gz
 export GZ_SIM_RESOURCE_PATH=$PWD/models
 gz sim --levels levels_terrain.sdf
 ```
@@ -31,14 +31,14 @@ gz sim --levels levels_terrain.sdf
 In a second terminal:
 
 ```bash
-cd outputs/gz
+cd outputs/demo_world/gz
 ./travel_levels.sh
 ```
 
 ## Generated Files
 
 ```text
-outputs/gz/
+outputs/demo_world/gz/
 ├── levels_terrain.sdf
 ├── single_tile_terrain.sdf
 ├── travel_levels.sh

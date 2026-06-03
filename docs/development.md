@@ -71,10 +71,11 @@ Do not track:
 
 ## Generated Output
 
-Generated terrain artifacts should be written under `outputs/`:
+Generated terrain artifacts should be written under `outputs/<world-name>/`:
 
 ```text
-outputs/
+outputs/demo_world/
+├── metadata.json
 ├── dem_1km.tif
 ├── tiles/
 ├── mesh/
