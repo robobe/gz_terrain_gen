@@ -4,7 +4,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from gz_terrain_gen.metadata import dem_metadata, requested_area_metadata, update_metadata
+from gz_terrain_gen.metadata import dem_metadata, requested_area_metadata, update_metadata, viewer_metadata
 
 
 def test_metadata_writes_expected_keys_and_elevation_stats(tmp_path) -> None:
@@ -44,3 +44,22 @@ def test_metadata_writes_expected_keys_and_elevation_stats(tmp_path) -> None:
     assert metadata["dem"]["elevation"]["minimum_m"] == 10.0
     assert metadata["dem"]["elevation"]["maximum_m"] == 40.0
     assert metadata["dem"]["elevation"]["mean_m"] == 25.0
+
+
+def test_viewer_metadata_contains_expected_paths(tmp_path) -> None:
+    viewer_dir = tmp_path / "viewer"
+    metadata = viewer_metadata(
+        {
+            "viewer_dir": viewer_dir,
+            "glb_path": viewer_dir / "terrain.glb",
+            "html_path": viewer_dir / "index.html",
+            "vertex_count": 8,
+            "face_count": 4,
+        }
+    )
+
+    assert metadata["viewer_dir"] == str(viewer_dir)
+    assert metadata["glb_path"] == str(viewer_dir / "terrain.glb")
+    assert metadata["html_path"] == str(viewer_dir / "index.html")
+    assert metadata["vertex_count"] == 8
+    assert metadata["face_count"] == 4

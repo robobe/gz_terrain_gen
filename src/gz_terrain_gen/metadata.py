@@ -125,3 +125,13 @@ def gazebo_metadata(model_count: int, gz_dir: Path) -> dict[str, Any]:
         "single_tile_sdf": str(gz_dir / "single_tile_terrain.sdf"),
         "travel_script": str(gz_dir / "travel_levels.sh"),
     }
+
+
+def viewer_metadata(viewer_info: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "viewer_dir": str(viewer_info["viewer_dir"]),
+        "glb_path": str(viewer_info["glb_path"]),
+        "html_path": str(viewer_info["html_path"]),
+        "vertex_count": viewer_info["vertex_count"],
+        "face_count": viewer_info["face_count"],
+    }

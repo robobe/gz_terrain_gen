@@ -3,7 +3,8 @@
 This project generates tiled Gazebo terrain from real elevation data. It downloads
 a DEM from OpenTopography, splits it into tiles, converts tiles into Collada
 meshes, and creates Gazebo model/world files for testing level loading with
-`gz sim --levels`.
+`gz sim --levels`. It also creates a browser viewer for inspecting the combined
+terrain mesh without Gazebo.
 
 The Python project is managed with `uv` and exposes one CLI command:
 
@@ -12,13 +13,6 @@ gz-terrain-gen
 ```
 
 ## Setup
-
-Install the system tools used by the pipeline. The Python GDAL binding is locked
-in `pyproject.toml`, but it needs matching system GDAL libraries and headers:
-
-```bash
-sudo apt install gdal-bin libgdal-dev python3-gdal
-```
 
 Create or update the local virtual environment:
 
@@ -68,8 +62,20 @@ outputs/demo_world/
 ├── dem.tif
 ├── tiles/
 ├── mesh/
-└── gz/
+├── gz/
+└── viewer/
 ```
+
+Inspect the combined terrain mesh without Gazebo:
+
+```bash
+uv run gz-terrain-gen-viewer --world-name demo_world
+```
+
+Then open the printed local URL in a browser. The viewer loads
+`outputs/demo_world/viewer/terrain.glb` from `viewer/index.html`. It uses
+Three.js from a CDN, so the browser needs internet access unless the viewer is
+changed later to vendor Three.js locally.
 
 Run the generated Gazebo world:
 
@@ -92,6 +98,7 @@ cd outputs/demo_world/gz
 uv run gz-terrain-gen
 uv run gz-terrain-gen --world-name demo_world
 uv run gz-terrain-gen --world-name demo_world --center-lat 30.853205 --center-lon 34.447382 --size-km 1.0
+uv run gz-terrain-gen-viewer --world-name demo_world
 ```
 
 `--world-name` is optional and defaults to `terrain_world`. Use `--output-dir`
@@ -111,6 +118,7 @@ src/gz_terrain_gen/
 ├── tiling.py
 ├── mesh.py
 ├── metadata.py
+├── viewer.py
 └── gazebo.py
 ```
 
@@ -128,14 +136,11 @@ output should go under `outputs/`.
 ## Dependencies
 
 Python dependencies are declared in `pyproject.toml` and locked in `uv.lock`.
-The mesh stage imports `osgeo.gdal`; the project pins `GDAL==3.8.4` to match the
-system GDAL version on this machine.
-
-Verify the binding with:
+Raster reads use `rasterio`; combined viewer export uses `trimesh` and
+`pygltflib`.
 
 ```bash
-uv run python -c "from osgeo import gdal"
+uv run python -c "import rasterio, trimesh, pygltflib; print('deps ok')"
 ```
 
-If it fails on another machine, install matching system GDAL packages and rerun
-`uv sync`, or update the pinned `GDAL` version to match `gdal-config --version`.
+Gazebo itself remains a system dependency for simulation.

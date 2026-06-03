@@ -69,6 +69,6 @@ uv run gz-terrain-gen --help
 - Tests: pytest
 - Arrays/math: numpy
 - Raster/GeoTIFF: rasterio
-- DEM mesh generation: keep GDAL only where needed
+- Browser mesh viewer/export: trimesh and pygltflib
 - HTTP: requests
 - Logging: Loguru

@@ -41,19 +41,11 @@ uv run python -m compileall -f src tests
 ## Dependencies
 
 Python dependencies are declared in `pyproject.toml` and locked in `uv.lock`.
-
-The mesh stage imports `osgeo.gdal`. The project currently pins `GDAL==3.8.4`
-to match the system GDAL version on this machine. Verify the binding with:
-
-```bash
-uv run python -c "from osgeo import gdal; print(gdal.VersionInfo())"
-```
-
-If it fails on another machine, install matching system GDAL packages and rerun
-`uv sync`, or update the pinned `GDAL` version to match:
+Raster reads use `rasterio`; combined viewer export uses `trimesh` and
+`pygltflib`. Verify core Python dependencies with:
 
 ```bash
-gdal-config --version
+uv run python -c "import rasterio, trimesh, pygltflib; print('deps ok')"
 ```
 
 ## Git
@@ -79,5 +71,6 @@ outputs/demo_world/
 ├── dem.tif
 ├── tiles/
 ├── mesh/
-└── gz/
+├── gz/
+└── viewer/
 ```

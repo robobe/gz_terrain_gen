@@ -8,7 +8,9 @@ texture data.
 
 The application also creates Gazebo worlds with level definitions. Those levels
 can load and unload terrain models based on the performer position. Generated
-artifacts are grouped by CLI world name under `outputs/<world-name>/`.
+artifacts are grouped by CLI world name under `outputs/<world-name>/`. A browser
+viewer is also generated for inspecting the combined terrain mesh without
+Gazebo.
 
 ## Data Flow
 
@@ -22,6 +24,8 @@ OpenTopography API
   -> outputs/<world-name>/gz/models/terrain_tile_X_Y/
   -> outputs/<world-name>/gz/levels_terrain.sdf
   -> outputs/<world-name>/gz/travel_levels.sh
+  -> outputs/<world-name>/viewer/terrain.glb
+  -> outputs/<world-name>/viewer/index.html
 ```
 
 ## Components
@@ -63,7 +67,7 @@ Module: `src/gz_terrain_gen/mesh.py`
 Responsibilities:
 
 - Reads `outputs/<world-name>/tiles/tiles.csv`.
-- Opens `outputs/<world-name>/dem.tif` with GDAL.
+- Opens `outputs/<world-name>/dem.tif` with rasterio.
 - Samples the DEM using bilinear interpolation.
 - Builds a local mesh for each tile where X/Y are tile-local meters and Z is
   DEM elevation.
@@ -98,6 +102,30 @@ Important contract:
 - `gz sim --levels levels_terrain.sdf` uses the performer location to exercise
   Gazebo level loading.
 
+### Browser Viewer
+
+Module: `src/gz_terrain_gen/viewer.py`
+
+Responsibilities:
+
+- Reads `outputs/<world-name>/dem.tif` and `outputs/<world-name>/tiles/tiles.csv`.
+- Rebuilds tile meshes using the same DEM sampling logic as mesh generation.
+- Applies tile center offsets from `tiles.csv` so all tiles form one combined
+  terrain.
+- Writes `outputs/<world-name>/viewer/terrain.glb` and
+  `outputs/<world-name>/viewer/index.html`.
+- Provides `gz-terrain-gen-viewer` to serve the viewer with Python's built-in
+  HTTP server.
+- Records viewer output paths and combined vertex/face counts in
+  `metadata.json`.
+
+Important contract:
+
+- The viewer is for mesh inspection only. Gazebo worlds, models, and level
+  loading remain separate outputs.
+- `index.html` uses Three.js from CDN, so browser access requires internet
+  unless Three.js is vendored later.
+
 ## Current Repository Shape
 
 ```text
@@ -126,11 +154,13 @@ src/gz_terrain_gen/
   tiling.py
   mesh.py
   metadata.py
+  viewer.py
   gazebo.py
   paths.py
 ```
 
 - A CLI command controls the whole pipeline.
+- A second helper command serves the generated browser viewer.
 - All paths are explicit and configurable.
 - Generated artifacts go under `outputs/<world-name>/` or another configured
   output root.

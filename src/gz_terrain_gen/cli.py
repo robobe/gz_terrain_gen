@@ -1,4 +1,5 @@
 import shutil
+import shlex
 from pathlib import Path
 
 import click
@@ -14,6 +15,7 @@ from gz_terrain_gen.metadata import (
     requested_area_metadata,
     tile_metadata,
     update_metadata,
+    viewer_metadata,
 )
 from gz_terrain_gen.opentopo import (
     DEFAULT_CENTER_LAT,
@@ -24,6 +26,7 @@ from gz_terrain_gen.opentopo import (
 )
 from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR, DEFAULT_TEXTURE, validate_world_name
 from gz_terrain_gen.tiling import DEFAULT_TILE_M, split_dem
+from gz_terrain_gen.viewer import generate_viewer
 
 DEFAULT_WORLD_NAME = "terrain_world"
 
@@ -45,6 +48,7 @@ def default_paths(output_dir: Path, world_name: str) -> dict[str, Path]:
         "manifest": world_dir / "tiles" / "tiles.csv",
         "mesh": world_dir / "mesh",
         "gz": world_dir / "gz",
+        "viewer": world_dir / "viewer",
     }
 
 
@@ -58,6 +62,13 @@ def reset_existing_world_output(world_dir: Path) -> None:
     )
     logger.info("removing existing world output folder: {}", world_dir)
     shutil.rmtree(world_dir)
+
+
+def viewer_command(world_name: str, output_dir: Path) -> str:
+    command = f"uv run gz-terrain-gen-viewer --world-name {world_name}"
+    if output_dir != DEFAULT_OUTPUT_DIR:
+        command += f" --output-dir {shlex.quote(str(output_dir))}"
+    return command
 
 
 def run_pipeline(
@@ -131,6 +142,20 @@ def run_pipeline(
     )
     click.echo(f"created {model_count} models in {paths['gz'] / 'models'}")
     click.echo(f"created world: {paths['gz'] / 'levels_terrain.sdf'}")
+
+    logger.info("starting browser viewer generation for world {}", world_name)
+    viewer_info = generate_viewer(paths["dem"], paths["tiles"], paths["manifest"], paths["viewer"])
+    logger.info("completed browser viewer generation for world {}", world_name)
+    logger.info("updating metadata: {}", paths["metadata"])
+    update_metadata(
+        paths["metadata"],
+        world_name,
+        {
+            "viewer": viewer_metadata(viewer_info),
+        },
+    )
+    click.echo(f"created viewer: {paths['viewer'] / 'index.html'}")
+    click.echo(f"serve viewer: {viewer_command(world_name, output_dir)}")
     click.echo(f"metadata: {paths['metadata']}")
     logger.info("completed full terrain pipeline for world {}", world_name)
     return paths

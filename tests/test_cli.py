@@ -33,6 +33,7 @@ def test_default_paths_resolve_under_world_output() -> None:
     assert paths["manifest"] == DEFAULT_OUTPUT_DIR / "demo" / "tiles" / "tiles.csv"
     assert paths["mesh"] == DEFAULT_OUTPUT_DIR / "demo" / "mesh"
     assert paths["gz"] == DEFAULT_OUTPUT_DIR / "demo" / "gz"
+    assert paths["viewer"] == DEFAULT_OUTPUT_DIR / "demo" / "viewer"
 
 
 def test_validate_world_name_accepts_expected_names() -> None:

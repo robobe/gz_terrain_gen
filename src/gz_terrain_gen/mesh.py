@@ -58,17 +58,17 @@ def write_dae(path: Path, name: str, vertices: list[tuple[float, float, float]],
 
 
 def open_dem(path: Path) -> tuple[Any, Any, float | None, tuple[float, ...]]:
-    from osgeo import gdal
+    import rasterio
 
-    dataset = gdal.Open(str(path))
-    if dataset is None:
+    if not path.exists():
         raise FileNotFoundError(path)
 
-    band = dataset.GetRasterBand(1)
-    elevation = band.ReadAsArray().astype(float)
-    nodata = band.GetNoDataValue()
-    inverse_transform = gdal.InvGeoTransform(dataset.GetGeoTransform())
-    return dataset, elevation, nodata, inverse_transform
+    with rasterio.open(path) as dataset:
+        elevation = dataset.read(1).astype(float)
+        nodata = dataset.nodata
+        inverse = ~dataset.transform
+    inverse_transform = (inverse.c, inverse.a, inverse.b, inverse.f, inverse.d, inverse.e)
+    return None, elevation, nodata, inverse_transform
 
 
 def sample_dem(elevation: Any, nodata: float | None, inverse_transform: tuple[float, ...], lon: float, lat: float) -> float:
@@ -107,12 +107,13 @@ def sample_dem(elevation: Any, nodata: float | None, inverse_transform: tuple[fl
 
 
 def tile_shape(tile_path: Path) -> tuple[int, int]:
-    from osgeo import gdal
+    import rasterio
 
-    dataset = gdal.Open(str(tile_path))
-    if dataset is None:
+    if not tile_path.exists():
         raise FileNotFoundError(tile_path)
-    return dataset.RasterXSize, dataset.RasterYSize
+
+    with rasterio.open(tile_path) as dataset:
+        return dataset.width, dataset.height
 
 
 def tile_to_mesh(tile: dict[str, str], source: tuple[Any, Any, float | None, tuple[float, ...]], tiles_dir: Path) -> tuple[list[tuple[float, float, float]], list[tuple[int, int, int]]]:
