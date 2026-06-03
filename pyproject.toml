@@ -1,0 +1,23 @@
+[project]
+name = "gz-terrain-gen"
+version = "0.1.0"
+description = "Generate tiled Gazebo terrain worlds from DEM data"
+requires-python = ">=3.12"
+dependencies = [
+    "gdal==3.8.4",
+    "numpy>=2.4.6",
+    "rasterio>=1.4.4",
+    "requests>=2.34.2",
+]
+
+[project.scripts]
+gz-terrain-gen = "gz_terrain_gen.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.9.21,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
