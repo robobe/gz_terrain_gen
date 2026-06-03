@@ -37,6 +37,15 @@ For CLI changes, also check:
 uv run gz-terrain-gen --help
 ```
 
+## CLI Conventions
+
+- Use Click for all CLI code.
+- Do not use the standard-library argument parser for CLI code.
+- Keep Click command functions thin.
+- Keep core behavior in importable modules outside the CLI layer.
+- Use Click options for validation, defaults, help text, and path arguments.
+- For CLI changes, verify top-level and affected subcommand help.
+
 ## Project Conventions
 
 - The CLI entrypoint is `gz-terrain-gen`.

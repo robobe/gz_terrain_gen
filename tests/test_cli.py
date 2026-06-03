@@ -1,16 +1,17 @@
 import pytest
+from click.testing import CliRunner
 
-from gz_terrain_gen.cli import build_parser, default_paths
+from gz_terrain_gen.cli import default_paths, main
 from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR
 from gz_terrain_gen.paths import validate_world_name
 
 
 def test_cli_help_loads() -> None:
-    parser = build_parser()
-    help_text = parser.format_help()
-    assert "gz-terrain-gen" in help_text
-    assert "download" in help_text
-    assert "gazebo" in help_text
+    result = CliRunner().invoke(main, ["--help"])
+
+    assert result.exit_code == 0
+    assert "download" in result.output
+    assert "gazebo" in result.output
 
 
 def test_default_paths_resolve_under_world_output() -> None:
@@ -36,7 +37,29 @@ def test_validate_world_name_rejects_unsafe_names(world_name: str) -> None:
 
 
 def test_cli_requires_world_name() -> None:
-    parser = build_parser()
+    result = CliRunner().invoke(main, ["split"])
 
-    with pytest.raises(SystemExit):
-        parser.parse_args(["split"])
+    assert result.exit_code != 0
+    assert "Missing option '--world-name'" in result.output
+
+
+def test_cli_rejects_invalid_world_name() -> None:
+    result = CliRunner().invoke(main, ["split", "--world-name", "bad/name"])
+
+    assert result.exit_code != 0
+    assert "world name must match" in result.output
+
+
+def test_all_help_loads() -> None:
+    result = CliRunner().invoke(main, ["all", "--help"])
+
+    assert result.exit_code == 0
+    assert "--world-name" in result.output
+    assert "--center-lat" in result.output
+
+
+def test_split_help_loads_with_world_name() -> None:
+    result = CliRunner().invoke(main, ["split", "--world-name", "test_world", "--help"])
+
+    assert result.exit_code == 0
+    assert "--tile-m" in result.output

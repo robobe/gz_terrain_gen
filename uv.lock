@@ -146,6 +146,7 @@ name = "gz-terrain-gen"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "click" },
     { name = "gdal" },
     { name = "numpy" },
     { name = "rasterio" },
@@ -159,6 +160,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "click", specifier = ">=8.4.1" },
     { name = "gdal", specifier = "==3.8.4" },
     { name = "numpy", specifier = ">=2.4.6" },
     { name = "rasterio", specifier = ">=1.4.4" },
