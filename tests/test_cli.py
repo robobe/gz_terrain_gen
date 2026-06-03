@@ -10,6 +10,7 @@ def test_cli_help_loads() -> None:
     result = CliRunner().invoke(main, ["--help"])
 
     assert result.exit_code == 0
+    assert "--log-level" in result.output
     assert "download" in result.output
     assert "gazebo" in result.output
 
@@ -63,3 +64,17 @@ def test_split_help_loads_with_world_name() -> None:
 
     assert result.exit_code == 0
     assert "--tile-m" in result.output
+
+
+def test_log_level_option_works_before_subcommand() -> None:
+    result = CliRunner().invoke(main, ["--log-level", "DEBUG", "split", "--world-name", "test_world", "--help"])
+
+    assert result.exit_code == 0
+    assert "--tile-m" in result.output
+
+
+def test_invalid_log_level_fails() -> None:
+    result = CliRunner().invoke(main, ["--log-level", "LOUD", "split", "--world-name", "test_world"])
+
+    assert result.exit_code != 0
+    assert "Invalid value for '--log-level'" in result.output

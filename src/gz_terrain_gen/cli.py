@@ -3,8 +3,10 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 import click
+from loguru import logger
 
 from gz_terrain_gen.gazebo import generate_gazebo_worlds
+from gz_terrain_gen.log_config import LOG_LEVELS, configure_logging
 from gz_terrain_gen.mesh import generate_meshes
 from gz_terrain_gen.metadata import (
     dem_metadata,
@@ -69,8 +71,15 @@ def common_output_options(func: F) -> F:
 
 
 @click.group(help="Generate tiled Gazebo terrain from OpenTopography DEM data.")
-def main() -> None:
-    pass
+@click.option(
+    "--log-level",
+    type=click.Choice(LOG_LEVELS, case_sensitive=False),
+    default="INFO",
+    show_default=True,
+    help="Application log level.",
+)
+def main(log_level: str) -> None:
+    configure_logging(log_level)
 
 
 @main.command(help="Download a DEM from OpenTopography.")
@@ -89,7 +98,12 @@ def download(
 ) -> None:
     paths = default_paths(output_dir, world_name)
     output = output_path or paths["dem"]
+    logger.info("starting DEM download for world {}", world_name)
+    logger.debug("download output path: {}", output)
+    logger.debug("download request center=({}, {}) size_km={}", center_lat, center_lon, size_km)
     download_dem(output, center_lat=center_lat, center_lon=center_lon, size_km=size_km)
+    logger.info("completed DEM download: {}", output)
+    logger.info("updating metadata: {}", paths["metadata"])
     update_metadata(
         paths["metadata"],
         world_name,
@@ -117,7 +131,12 @@ def split(
     paths = default_paths(output_dir, world_name)
     dem = input_path or paths["dem"]
     tile_output_dir = tiles_dir or paths["tiles"]
+    logger.info("starting DEM split for world {}", world_name)
+    logger.debug("split input DEM: {}", dem)
+    logger.debug("tile output directory: {}", tile_output_dir)
     tile_count, manifest = split_dem(dem, tile_output_dir, tile_m)
+    logger.info("completed DEM split: {} tiles", tile_count)
+    logger.info("updating metadata: {}", paths["metadata"])
     update_metadata(
         paths["metadata"],
         world_name,
@@ -150,7 +169,14 @@ def mesh(
     tile_dir = tiles_dir or paths["tiles"]
     manifest_path = manifest or paths["manifest"]
     mesh_output_dir = mesh_dir or paths["mesh"]
+    logger.info("starting mesh generation for world {}", world_name)
+    logger.debug("mesh source DEM: {}", dem)
+    logger.debug("mesh tiles directory: {}", tile_dir)
+    logger.debug("mesh manifest path: {}", manifest_path)
+    logger.debug("mesh output directory: {}", mesh_output_dir)
     count = generate_meshes(dem, tile_dir, manifest_path, mesh_output_dir)
+    logger.info("completed mesh generation: {} meshes", count)
+    logger.info("updating metadata: {}", paths["metadata"])
     update_metadata(
         paths["metadata"],
         world_name,
@@ -186,7 +212,13 @@ def gazebo(
     manifest_path = manifest or paths["manifest"]
     mesh_input_dir = mesh_dir or paths["mesh"]
     gazebo_dir = gz_dir or paths["gz"]
+    logger.info("starting Gazebo generation for world {}", world_name)
+    logger.debug("Gazebo manifest path: {}", manifest_path)
+    logger.debug("Gazebo mesh input directory: {}", mesh_input_dir)
+    logger.debug("Gazebo output directory: {}", gazebo_dir)
     count = generate_gazebo_worlds(manifest_path, mesh_input_dir, texture, gazebo_dir, world_name)
+    logger.info("completed Gazebo generation: {} models", count)
+    logger.info("updating metadata: {}", paths["metadata"])
     update_metadata(
         paths["metadata"],
         world_name,
@@ -223,7 +255,14 @@ def all(
     texture: Path,
 ) -> None:
     paths = default_paths(output_dir, world_name)
+    logger.info("starting full terrain pipeline for world {}", world_name)
+    logger.debug("resolved world output directory: {}", paths["world"])
+    logger.debug("download request center=({}, {}) size_km={}", center_lat, center_lon, size_km)
+
+    logger.info("starting DEM download for world {}", world_name)
     download_dem(paths["dem"], center_lat=center_lat, center_lon=center_lon, size_km=size_km)
+    logger.info("completed DEM download: {}", paths["dem"])
+    logger.info("updating metadata: {}", paths["metadata"])
     update_metadata(
         paths["metadata"],
         world_name,
@@ -234,7 +273,11 @@ def all(
     )
     click.echo(f"DEM saved to {paths['dem']}")
 
+    logger.info("starting DEM split for world {}", world_name)
+    logger.debug("tile output directory: {}", paths["tiles"])
     tile_count, manifest = split_dem(paths["dem"], paths["tiles"], tile_m)
+    logger.info("completed DEM split: {} tiles", tile_count)
+    logger.info("updating metadata: {}", paths["metadata"])
     update_metadata(
         paths["metadata"],
         world_name,
@@ -245,7 +288,11 @@ def all(
     click.echo(f"created {tile_count} tiles")
     click.echo(f"manifest: {manifest}")
 
+    logger.info("starting mesh generation for world {}", world_name)
+    logger.debug("mesh output directory: {}", paths["mesh"])
     mesh_count = generate_meshes(paths["dem"], paths["tiles"], paths["manifest"], paths["mesh"])
+    logger.info("completed mesh generation: {} meshes", mesh_count)
+    logger.info("updating metadata: {}", paths["metadata"])
     update_metadata(
         paths["metadata"],
         world_name,
@@ -255,7 +302,11 @@ def all(
     )
     click.echo(f"created {mesh_count} meshes in {paths['mesh']}")
 
+    logger.info("starting Gazebo generation for world {}", world_name)
+    logger.debug("Gazebo output directory: {}", paths["gz"])
     model_count = generate_gazebo_worlds(paths["manifest"], paths["mesh"], texture, paths["gz"], world_name)
+    logger.info("completed Gazebo generation: {} models", model_count)
+    logger.info("updating metadata: {}", paths["metadata"])
     update_metadata(
         paths["metadata"],
         world_name,
@@ -266,3 +317,4 @@ def all(
     click.echo(f"created {model_count} models in {paths['gz'] / 'models'}")
     click.echo(f"created world: {paths['gz'] / 'levels_terrain.sdf'}")
     click.echo(f"metadata: {paths['metadata']}")
+    logger.info("completed full terrain pipeline for world {}", world_name)

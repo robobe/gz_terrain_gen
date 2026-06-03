@@ -46,6 +46,14 @@ uv run gz-terrain-gen --help
 - Use Click options for validation, defaults, help text, and path arguments.
 - For CLI changes, verify top-level and affected subcommand help.
 
+## Logging Conventions
+
+- Use Loguru for application logging.
+- Configure logging in the CLI entrypoint.
+- Log format must include module name and line number.
+- Keep `click.echo` for user-facing command result summaries.
+- Do not log secrets, API keys, or credential values.
+
 ## Project Conventions
 
 - The CLI entrypoint is `gz-terrain-gen`.
@@ -53,3 +61,13 @@ uv run gz-terrain-gen --help
 - The default generated artifact root is `outputs/`.
 - The default texture asset is `assets/texture/soil.jpg`.
 - Gazebo itself remains a system dependency.
+
+## Preferred Libraries
+
+- CLI: Click
+- Tests: pytest
+- Arrays/math: numpy
+- Raster/GeoTIFF: rasterio
+- DEM mesh generation: keep GDAL only where needed
+- HTTP: requests
+- Logging: Loguru

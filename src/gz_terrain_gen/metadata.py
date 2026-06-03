@@ -5,6 +5,7 @@ from typing import Any
 
 import numpy as np
 import rasterio
+from loguru import logger
 
 from gz_terrain_gen.opentopo import bounds_for_square
 
@@ -24,9 +25,11 @@ def read_metadata(path: Path) -> dict[str, Any]:
 def write_metadata(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n")
+    logger.debug("wrote metadata file: {}", path)
 
 
 def update_metadata(path: Path, world_name: str, sections: dict[str, Any]) -> dict[str, Any]:
+    logger.debug("updating metadata sections {} for world {}", sorted(sections), world_name)
     data = read_metadata(path)
     now = utc_now()
     data.setdefault("schema_version", SCHEMA_VERSION)
