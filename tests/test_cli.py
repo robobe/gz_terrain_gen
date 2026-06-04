@@ -3,13 +3,13 @@ from pathlib import Path
 import numpy as np
 import pytest
 import rasterio
+import click
 from click.testing import CliRunner
 from rasterio.transform import from_origin
 
-from gz_terrain_gen.cli import DEFAULT_WORLD_NAME, cli, default_paths, format_completion_summary, format_start_banner
-from gz_terrain_gen.main import main
-from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR
-from gz_terrain_gen.paths import validate_world_name
+from gz_terrain_gen.cli import DEFAULT_WORLD_NAME, TerrainGenerationConfig, cli, default_paths
+from gz_terrain_gen.main import format_completion_summary, format_start_banner, main
+from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR, validate_world_name
 
 
 def test_cli_help_loads_without_subcommands() -> None:
@@ -132,28 +132,15 @@ def test_validate_world_name_rejects_unsafe_names(world_name: str) -> None:
         validate_world_name(world_name)
 
 
-def test_world_name_defaults_to_terrain_world(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    captured = {}
-
-    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, level_z_size_m, texture, dem_file):
-        captured["world_name"] = world_name
-        captured["output_dir"] = output_dir
-        captured["level_z_size_m"] = level_z_size_m
-        captured["dem_file"] = dem_file
-        return default_paths(output_dir, world_name)
-
-    monkeypatch.setattr("gz_terrain_gen.cli.run_pipeline", fake_run_pipeline)
-
-    result = CliRunner().invoke(cli, ["--output-dir", str(tmp_path)])
+def test_cli_returns_config_with_default_world_name(tmp_path: Path) -> None:
+    result = CliRunner().invoke(cli, ["--output-dir", str(tmp_path)], standalone_mode=False)
 
     assert result.exit_code == 0
-    assert captured["world_name"] == DEFAULT_WORLD_NAME
-    assert captured["output_dir"] == tmp_path
-    assert captured["level_z_size_m"] == 1500
-    assert captured["dem_file"] is None
-    assert "GZ Terrain Generator" in result.output
-    assert "Version: 0.1.0" in result.output
-    assert f"Output: {tmp_path / DEFAULT_WORLD_NAME}" in result.output
+    assert isinstance(result.return_value, TerrainGenerationConfig)
+    assert result.return_value.world_name == DEFAULT_WORLD_NAME
+    assert result.return_value.output_dir == tmp_path
+    assert result.return_value.level_z_size_m == 1500
+    assert result.return_value.dem_file is None
 
 
 def test_cli_rejects_invalid_world_name() -> None:
@@ -161,6 +148,26 @@ def test_cli_rejects_invalid_world_name() -> None:
 
     assert result.exit_code != 0
     assert "world name must match" in result.output
+
+
+def test_main_uses_parsed_config_and_prints_start_banner(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys) -> None:
+    captured = {}
+
+    def fake_run_pipeline(config):
+        captured["config"] = config
+        return default_paths(config.output_dir, config.world_name)
+
+    monkeypatch.setattr("gz_terrain_gen.main.run_pipeline", fake_run_pipeline)
+
+    main(["--world-name", "demo", "--output-dir", str(tmp_path)])
+
+    assert captured["config"].world_name == "demo"
+    assert captured["config"].output_dir == tmp_path
+    assert captured["config"].level_z_size_m == 1500
+    output = capsys.readouterr().out
+    assert "GZ Terrain Generator" in output
+    assert "Version: 0.1.0" in output
+    assert f"Output: {tmp_path / 'demo'}" in output
 
 
 def test_existing_world_folder_decline_aborts_before_pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -174,13 +181,13 @@ def test_existing_world_folder_decline_aborts_before_pipeline(monkeypatch: pytes
         nonlocal called
         called = True
 
-    monkeypatch.setattr("gz_terrain_gen.cli.run_pipeline", fake_run_pipeline)
+    monkeypatch.setattr("gz_terrain_gen.main.run_pipeline", fake_run_pipeline)
 
-    result = CliRunner().invoke(
-        cli,
-        ["--world-name", "demo", "--output-dir", str(tmp_path)],
-        input="n\n",
-    )
+    @click.command()
+    def command():
+        main(["--world-name", "demo", "--output-dir", str(tmp_path)])
+
+    result = CliRunner().invoke(command, input="n\n")
 
     assert result.exit_code != 0
     assert not called
@@ -194,47 +201,40 @@ def test_existing_world_folder_confirm_removes_before_pipeline(monkeypatch: pyte
     marker.write_text("remove")
     captured = {}
 
-    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, level_z_size_m, texture, dem_file):
-        captured["world_exists"] = (output_dir / world_name).exists()
-        return default_paths(output_dir, world_name)
+    def fake_run_pipeline(config):
+        captured["world_exists"] = (config.output_dir / config.world_name).exists()
+        return default_paths(config.output_dir, config.world_name)
 
-    monkeypatch.setattr("gz_terrain_gen.cli.run_pipeline", fake_run_pipeline)
+    monkeypatch.setattr("gz_terrain_gen.main.run_pipeline", fake_run_pipeline)
 
-    result = CliRunner().invoke(
-        cli,
-        ["--world-name", "demo", "--output-dir", str(tmp_path)],
-        input="y\n",
-    )
+    @click.command()
+    def command():
+        main(["--world-name", "demo", "--output-dir", str(tmp_path)])
+
+    result = CliRunner().invoke(command, input="y\n")
 
     assert result.exit_code == 0
     assert captured["world_exists"] is False
     assert not marker.exists()
 
 
-def test_cli_passes_existing_dem_file_to_pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_cli_parses_existing_dem_file(tmp_path: Path) -> None:
     dem_path = tmp_path / "input.tif"
     write_test_dem(dem_path)
-    captured = {}
-
-    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, level_z_size_m, texture, dem_file):
-        captured["dem_file"] = dem_file
-        captured["level_z_size_m"] = level_z_size_m
-        return default_paths(output_dir, world_name)
-
-    monkeypatch.setattr("gz_terrain_gen.cli.run_pipeline", fake_run_pipeline)
 
     result = CliRunner().invoke(
         cli,
         ["--output-dir", str(tmp_path / "outputs"), "--dem-file", str(dem_path)],
+        standalone_mode=False,
     )
 
     assert result.exit_code == 0
-    assert captured["dem_file"] == dem_path
-    assert captured["level_z_size_m"] == 1500
+    assert result.return_value.dem_file == dem_path
+    assert result.return_value.level_z_size_m == 1500
 
 
 def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    from gz_terrain_gen.cli import run_pipeline
+    from gz_terrain_gen.main import run_pipeline
 
     dem_path = tmp_path / "source.tif"
     output_dir = tmp_path / "outputs"
@@ -243,11 +243,11 @@ def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: p
     def fail_download(*args, **kwargs):
         raise AssertionError("download_dem should not be called")
 
-    monkeypatch.setattr("gz_terrain_gen.cli.download_dem", fail_download)
-    monkeypatch.setattr("gz_terrain_gen.cli.split_dem", lambda dem, tiles, tile_m: (0, tiles / "tiles.csv"))
-    monkeypatch.setattr("gz_terrain_gen.cli.generate_meshes", lambda source_dem, tiles_dir, manifest_path, mesh_dir: 0)
+    monkeypatch.setattr("gz_terrain_gen.main.download_dem", fail_download)
+    monkeypatch.setattr("gz_terrain_gen.main.split_dem", lambda dem, tiles, tile_m: (0, tiles / "tiles.csv"))
+    monkeypatch.setattr("gz_terrain_gen.main.generate_meshes", lambda source_dem, tiles_dir, manifest_path, mesh_dir: 0)
     monkeypatch.setattr(
-        "gz_terrain_gen.cli.generate_gazebo_worlds",
+        "gz_terrain_gen.main.generate_gazebo_worlds",
         lambda manifest, mesh, texture, gz, world, level_z_size_m: {
             "model_count": 0,
             "probe_pose": {"x": 0.0, "y": 0.0, "z": 30.0},
@@ -256,7 +256,7 @@ def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: p
         },
     )
     monkeypatch.setattr(
-        "gz_terrain_gen.cli.generate_viewer",
+        "gz_terrain_gen.main.generate_viewer",
         lambda source_dem, tiles_dir, manifest_path, viewer_dir: {
             "viewer_dir": viewer_dir,
             "glb_path": viewer_dir / "terrain.glb",
@@ -267,15 +267,18 @@ def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: p
     )
 
     paths = run_pipeline(
-        "demo",
-        output_dir,
-        30.0,
-        34.0,
-        1.0,
-        200,
-        1500,
-        tmp_path / "texture.jpg",
-        dem_path,
+        TerrainGenerationConfig(
+            log_level="INFO",
+            world_name="demo",
+            output_dir=output_dir,
+            center_lat=30.0,
+            center_lon=34.0,
+            size_km=1.0,
+            tile_m=200,
+            level_z_size_m=1500,
+            texture=tmp_path / "texture.jpg",
+            dem_file=dem_path,
+        )
     )
 
     assert paths["dem"].exists()

@@ -54,10 +54,23 @@ uv run gz-terrain-gen --help
 - Keep `click.echo` for user-facing command result summaries.
 - Do not log secrets, API keys, or credential values.
 
+## Data Shape Conventions
+
+- Use `@dataclass(frozen=True)` for fixed-shape internal application data.
+- Prefer attribute access such as `paths.dem` over dictionary access such as
+  `paths["dem"]`.
+- Avoid dictionaries for known structures such as path bundles, parsed config,
+  stage results, and typed generation outputs.
+- Use dictionaries for dynamic JSON-like data, external API payloads, and
+  metadata files where the key shape is intentionally flexible.
+- Keep dataclasses small, explicit, and importable from the module that owns the
+  concept.
+
 ## Project Conventions
 
 - The CLI entrypoint is `gz-terrain-gen`, defined as `gz_terrain_gen.main:main`.
-- `src/gz_terrain_gen/main.py` delegates to the Click app in `cli.py`.
+- `cli.py` parses and validates command arguments; `main.py` owns application
+  flow and pipeline execution.
 - Runtime dependencies are managed in `pyproject.toml` and locked in `uv.lock`.
 - The default generated artifact root is `outputs/`.
 - The default texture asset is `assets/texture/soil.jpg`.

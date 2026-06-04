@@ -14,3 +14,17 @@ def validate_world_name(value: str) -> str:
             "world name must match ^[A-Za-z0-9][A-Za-z0-9_-]*$"
         )
     return value
+
+
+def default_paths(output_dir: Path, world_name: str) -> dict[str, Path]:
+    world_dir = output_dir / validate_world_name(world_name)
+    return {
+        "world": world_dir,
+        "metadata": world_dir / "metadata.json",
+        "dem": world_dir / "dem.tif",
+        "tiles": world_dir / "tiles",
+        "manifest": world_dir / "tiles" / "tiles.csv",
+        "mesh": world_dir / "mesh",
+        "gz": world_dir / "gz",
+        "viewer": world_dir / "viewer",
+    }
