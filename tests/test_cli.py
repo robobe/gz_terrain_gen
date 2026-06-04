@@ -8,8 +8,10 @@ from click.testing import CliRunner
 from rasterio.transform import from_origin
 
 from gz_terrain_gen.cli import DEFAULT_WORLD_NAME, TerrainGenerationConfig, cli, default_paths
+from gz_terrain_gen.gazebo import GazeboGenerationResult
 from gz_terrain_gen.main import format_completion_summary, format_start_banner, main
-from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR, validate_world_name
+from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR, WorldPaths, validate_world_name
+from gz_terrain_gen.viewer import ViewerGenerationResult
 
 
 def test_cli_help_loads_without_subcommands() -> None:
@@ -47,14 +49,15 @@ def write_test_dem(path: Path) -> None:
 
 def test_default_paths_resolve_under_world_output() -> None:
     paths = default_paths(DEFAULT_OUTPUT_DIR, "demo")
-    assert paths["world"] == DEFAULT_OUTPUT_DIR / "demo"
-    assert paths["metadata"] == DEFAULT_OUTPUT_DIR / "demo" / "metadata.json"
-    assert paths["dem"] == DEFAULT_OUTPUT_DIR / "demo" / "dem.tif"
-    assert paths["tiles"] == DEFAULT_OUTPUT_DIR / "demo" / "tiles"
-    assert paths["manifest"] == DEFAULT_OUTPUT_DIR / "demo" / "tiles" / "tiles.csv"
-    assert paths["mesh"] == DEFAULT_OUTPUT_DIR / "demo" / "mesh"
-    assert paths["gz"] == DEFAULT_OUTPUT_DIR / "demo" / "gz"
-    assert paths["viewer"] == DEFAULT_OUTPUT_DIR / "demo" / "viewer"
+    assert isinstance(paths, WorldPaths)
+    assert paths.world == DEFAULT_OUTPUT_DIR / "demo"
+    assert paths.metadata == DEFAULT_OUTPUT_DIR / "demo" / "metadata.json"
+    assert paths.dem == DEFAULT_OUTPUT_DIR / "demo" / "dem.tif"
+    assert paths.tiles == DEFAULT_OUTPUT_DIR / "demo" / "tiles"
+    assert paths.manifest == DEFAULT_OUTPUT_DIR / "demo" / "tiles" / "tiles.csv"
+    assert paths.mesh == DEFAULT_OUTPUT_DIR / "demo" / "mesh"
+    assert paths.gz == DEFAULT_OUTPUT_DIR / "demo" / "gz"
+    assert paths.viewer == DEFAULT_OUTPUT_DIR / "demo" / "viewer"
 
 
 def test_start_banner_contains_version_world_and_output(tmp_path: Path) -> None:
@@ -248,22 +251,22 @@ def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: p
     monkeypatch.setattr("gz_terrain_gen.main.generate_meshes", lambda source_dem, tiles_dir, manifest_path, mesh_dir: 0)
     monkeypatch.setattr(
         "gz_terrain_gen.main.generate_gazebo_worlds",
-        lambda manifest, mesh, texture, gz, world, level_z_size_m: {
-            "model_count": 0,
-            "probe_pose": {"x": 0.0, "y": 0.0, "z": 30.0},
-            "gui_camera_pose": "0.000 0.000 100.000 0 1.5708 0",
-            "level_z_size_m": level_z_size_m,
-        },
+        lambda manifest, mesh, texture, gz, world, level_z_size_m: GazeboGenerationResult(
+            model_count=0,
+            probe_pose={"x": 0.0, "y": 0.0, "z": 30.0},
+            gui_camera_pose="0.000 0.000 100.000 0 1.5708 0",
+            level_z_size_m=level_z_size_m,
+        ),
     )
     monkeypatch.setattr(
         "gz_terrain_gen.main.generate_viewer",
-        lambda source_dem, tiles_dir, manifest_path, viewer_dir: {
-            "viewer_dir": viewer_dir,
-            "glb_path": viewer_dir / "terrain.glb",
-            "html_path": viewer_dir / "index.html",
-            "vertex_count": 0,
-            "face_count": 0,
-        },
+        lambda source_dem, tiles_dir, manifest_path, viewer_dir: ViewerGenerationResult(
+            viewer_dir=viewer_dir,
+            glb_path=viewer_dir / "terrain.glb",
+            html_path=viewer_dir / "index.html",
+            vertex_count=0,
+            face_count=0,
+        ),
     )
 
     paths = run_pipeline(
@@ -281,9 +284,9 @@ def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: p
         )
     )
 
-    assert paths["dem"].exists()
-    assert paths["dem"].read_bytes() == dem_path.read_bytes()
-    metadata = paths["metadata"].read_text()
+    assert paths.dem.exists()
+    assert paths.dem.read_bytes() == dem_path.read_bytes()
+    metadata = paths.metadata.read_text()
     assert '"source": "local_file"' in metadata
     assert f'"source_path": "{dem_path}"' in metadata
 

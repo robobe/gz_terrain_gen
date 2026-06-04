@@ -1,4 +1,5 @@
 import csv
+from dataclasses import dataclass
 import functools
 import http.server
 import socketserver
@@ -118,6 +119,15 @@ VIEWER_HTML = """<!doctype html>
 """
 
 
+@dataclass(frozen=True)
+class ViewerGenerationResult:
+    viewer_dir: Path
+    glb_path: Path
+    html_path: Path
+    vertex_count: int
+    face_count: int
+
+
 def click_world_name(_ctx: click.Context, _param: click.Parameter, value: str) -> str:
     try:
         return validate_world_name(value)
@@ -187,7 +197,7 @@ def write_viewer_html(path: Path) -> None:
     path.write_text(VIEWER_HTML)
 
 
-def generate_viewer(source_dem: Path, tiles_dir: Path, manifest_path: Path, viewer_dir: Path) -> dict[str, int | Path]:
+def generate_viewer(source_dem: Path, tiles_dir: Path, manifest_path: Path, viewer_dir: Path) -> ViewerGenerationResult:
     logger.info("starting browser viewer generation")
     logger.debug("viewer output directory: {}", viewer_dir)
     viewer_dir.mkdir(parents=True, exist_ok=True)
@@ -199,13 +209,13 @@ def generate_viewer(source_dem: Path, tiles_dir: Path, manifest_path: Path, view
     write_viewer_html(html_path)
 
     logger.info("completed browser viewer generation: {}", glb_path)
-    return {
-        "viewer_dir": viewer_dir,
-        "glb_path": glb_path,
-        "html_path": html_path,
-        "vertex_count": int(len(terrain.vertices)),
-        "face_count": int(len(terrain.faces)),
-    }
+    return ViewerGenerationResult(
+        viewer_dir=viewer_dir,
+        glb_path=glb_path,
+        html_path=html_path,
+        vertex_count=int(len(terrain.vertices)),
+        face_count=int(len(terrain.faces)),
+    )
 
 
 def serve_viewer(viewer_dir: Path, host: str, port: int, open_browser: bool) -> None:

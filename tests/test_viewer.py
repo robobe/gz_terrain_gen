@@ -6,7 +6,7 @@ import rasterio
 from click.testing import CliRunner
 from rasterio.transform import from_origin
 
-from gz_terrain_gen.viewer import build_combined_terrain_mesh, generate_viewer, viewer_cli
+from gz_terrain_gen.viewer import ViewerGenerationResult, build_combined_terrain_mesh, generate_viewer, viewer_cli
 
 
 def write_raster(path: Path, data: np.ndarray, transform) -> None:
@@ -94,10 +94,11 @@ def test_generate_viewer_writes_glb_and_html(tmp_path: Path) -> None:
 
     info = generate_viewer(dem_path, tiles_dir, manifest_path, viewer_dir)
 
-    assert info["glb_path"] == viewer_dir / "terrain.glb"
-    assert info["html_path"] == viewer_dir / "index.html"
-    assert info["vertex_count"] == 8
-    assert info["face_count"] == 4
+    assert isinstance(info, ViewerGenerationResult)
+    assert info.glb_path == viewer_dir / "terrain.glb"
+    assert info.html_path == viewer_dir / "index.html"
+    assert info.vertex_count == 8
+    assert info.face_count == 4
     assert (viewer_dir / "terrain.glb").exists()
     html = (viewer_dir / "index.html").read_text()
     assert "terrain.glb" in html

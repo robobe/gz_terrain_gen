@@ -7,7 +7,9 @@ import numpy as np
 import rasterio
 from loguru import logger
 
+from gz_terrain_gen.gazebo import GazeboGenerationResult
 from gz_terrain_gen.opentopo import bounds_for_square
+from gz_terrain_gen.viewer import ViewerGenerationResult
 
 SCHEMA_VERSION = 1
 
@@ -124,7 +126,7 @@ def mesh_metadata(mesh_count: int, mesh_dir: Path, z_offset_m: float = 0.0) -> d
     }
 
 
-def gazebo_metadata(model_count: int, gz_dir: Path, generation_info: dict[str, Any] | None = None) -> dict[str, Any]:
+def gazebo_metadata(model_count: int, gz_dir: Path, generation_info: GazeboGenerationResult | None = None) -> dict[str, Any]:
     metadata = {
         "model_count": model_count,
         "gz_dir": str(gz_dir),
@@ -136,19 +138,19 @@ def gazebo_metadata(model_count: int, gz_dir: Path, generation_info: dict[str, A
     if generation_info:
         metadata.update(
             {
-                "probe_pose": generation_info.get("probe_pose"),
-                "gui_camera_pose": generation_info.get("gui_camera_pose"),
-                "level_z_size_m": generation_info.get("level_z_size_m"),
+                "probe_pose": generation_info.probe_pose,
+                "gui_camera_pose": generation_info.gui_camera_pose,
+                "level_z_size_m": generation_info.level_z_size_m,
             }
         )
     return metadata
 
 
-def viewer_metadata(viewer_info: dict[str, Any]) -> dict[str, Any]:
+def viewer_metadata(viewer_info: ViewerGenerationResult) -> dict[str, Any]:
     return {
-        "viewer_dir": str(viewer_info["viewer_dir"]),
-        "glb_path": str(viewer_info["glb_path"]),
-        "html_path": str(viewer_info["html_path"]),
-        "vertex_count": viewer_info["vertex_count"],
-        "face_count": viewer_info["face_count"],
+        "viewer_dir": str(viewer_info.viewer_dir),
+        "glb_path": str(viewer_info.glb_path),
+        "html_path": str(viewer_info.html_path),
+        "vertex_count": viewer_info.vertex_count,
+        "face_count": viewer_info.face_count,
     }

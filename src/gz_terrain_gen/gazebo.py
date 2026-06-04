@@ -1,5 +1,6 @@
 import csv
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
@@ -13,6 +14,14 @@ COLLADA_NS = "http://www.collada.org/2005/11/COLLADASchema"
 GUI_TEMPLATE = Path(__file__).parents[1] / "templates" / "gz_gui.xml"
 
 ET.register_namespace("", COLLADA_NS)
+
+
+@dataclass(frozen=True)
+class GazeboGenerationResult:
+    model_count: int
+    probe_pose: dict[str, float]
+    gui_camera_pose: str
+    level_z_size_m: float
 
 
 def model_name(tile_stem: str) -> str:
@@ -574,7 +583,7 @@ def generate_gazebo_worlds(
     gz_dir: Path,
     world_name: str,
     level_z_size_m: float = DEFAULT_LEVEL_Z_SIZE_M,
-) -> dict[str, object]:
+) -> GazeboGenerationResult:
     if not manifest_path.exists():
         raise FileNotFoundError(f"missing tile manifest: {manifest_path}")
     if not texture.exists():
@@ -599,9 +608,9 @@ def generate_gazebo_worlds(
     travel_path.write_text(travel_script(tiles, world_name, probe_z))
     travel_path.chmod(0o755)
     (gz_dir / "README.md").write_text(readme_text())
-    return {
-        "model_count": len(tiles),
-        "probe_pose": {"x": probe_x, "y": probe_y, "z": probe_z},
-        "gui_camera_pose": camera_pose_value,
-        "level_z_size_m": level_z_size_m,
-    }
+    return GazeboGenerationResult(
+        model_count=len(tiles),
+        probe_pose={"x": probe_x, "y": probe_y, "z": probe_z},
+        gui_camera_pose=camera_pose_value,
+        level_z_size_m=level_z_size_m,
+    )

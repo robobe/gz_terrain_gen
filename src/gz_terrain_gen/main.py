@@ -20,7 +20,7 @@ from gz_terrain_gen.metadata import (
     viewer_metadata,
 )
 from gz_terrain_gen.opentopo import DEFAULT_DEM_TYPE, download_dem
-from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR, default_paths
+from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR, WorldPaths, default_paths
 from gz_terrain_gen.tiling import split_dem
 from gz_terrain_gen.viewer import generate_viewer
 
@@ -115,16 +115,16 @@ def echo_banner(text: str) -> None:
     click.echo()
 
 
-def run_pipeline(config: TerrainGenerationConfig) -> dict[str, Path]:
+def run_pipeline(config: TerrainGenerationConfig) -> WorldPaths:
     paths = default_paths(config.output_dir, config.world_name)
     logger.info("starting full terrain pipeline for world {}", config.world_name)
-    logger.debug("resolved world output directory: {}", paths["world"])
+    logger.debug("resolved world output directory: {}", paths.world)
     logger.debug("download request center=({}, {}) size_km={}", config.center_lat, config.center_lon, config.size_km)
 
     if config.dem_file is None:
         logger.info("starting DEM download for world {}", config.world_name)
-        download_dem(paths["dem"], center_lat=config.center_lat, center_lon=config.center_lon, size_km=config.size_km)
-        logger.info("completed DEM download: {}", paths["dem"])
+        download_dem(paths.dem, center_lat=config.center_lat, center_lon=config.center_lon, size_km=config.size_km)
+        logger.info("completed DEM download: {}", paths.dem)
         request_metadata = requested_area_metadata(
             config.center_lat,
             config.center_lon,
@@ -132,12 +132,12 @@ def run_pipeline(config: TerrainGenerationConfig) -> dict[str, Path]:
             DEFAULT_DEM_TYPE,
             source="opentopography",
         )
-        click.echo(f"DEM saved to {paths['dem']}")
+        click.echo(f"DEM saved to {paths.dem}")
     else:
         logger.info("using existing DEM file for world {}: {}", config.world_name, config.dem_file)
-        paths["dem"].parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(config.dem_file, paths["dem"])
-        logger.info("copied DEM from {} to {}", config.dem_file, paths["dem"])
+        paths.dem.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(config.dem_file, paths.dem)
+        logger.info("copied DEM from {} to {}", config.dem_file, paths.dem)
         request_metadata = requested_area_metadata(
             config.center_lat,
             config.center_lon,
@@ -146,96 +146,96 @@ def run_pipeline(config: TerrainGenerationConfig) -> dict[str, Path]:
             source="local_file",
             source_path=config.dem_file,
         )
-        click.echo(f"DEM copied from {config.dem_file} to {paths['dem']}")
+        click.echo(f"DEM copied from {config.dem_file} to {paths.dem}")
 
-    logger.info("updating metadata: {}", paths["metadata"])
+    logger.info("updating metadata: {}", paths.metadata)
     metadata = update_metadata(
-        paths["metadata"],
+        paths.metadata,
         config.world_name,
         {
             "request": request_metadata,
-            "dem": dem_metadata(paths["dem"]),
+            "dem": dem_metadata(paths.dem),
         },
     )
 
     logger.info("starting DEM split for world {}", config.world_name)
-    logger.debug("tile output directory: {}", paths["tiles"])
-    tile_count, manifest = split_dem(paths["dem"], paths["tiles"], config.tile_m)
+    logger.debug("tile output directory: {}", paths.tiles)
+    tile_count, manifest = split_dem(paths.dem, paths.tiles, config.tile_m)
     logger.info("completed DEM split: {} tiles", tile_count)
-    logger.info("updating metadata: {}", paths["metadata"])
+    logger.info("updating metadata: {}", paths.metadata)
     metadata = update_metadata(
-        paths["metadata"],
+        paths.metadata,
         config.world_name,
         {
-            "tiles": tile_metadata(tile_count, config.tile_m, paths["tiles"], manifest),
+            "tiles": tile_metadata(tile_count, config.tile_m, paths.tiles, manifest),
         },
     )
     click.echo(f"created {tile_count} tiles")
     click.echo(f"manifest: {manifest}")
 
     logger.info("starting mesh generation for world {}", config.world_name)
-    logger.debug("mesh output directory: {}", paths["mesh"])
-    mesh_count = generate_meshes(paths["dem"], paths["tiles"], paths["manifest"], paths["mesh"])
-    z_offset_m = source_z_offset(open_dem(paths["dem"]))
+    logger.debug("mesh output directory: {}", paths.mesh)
+    mesh_count = generate_meshes(paths.dem, paths.tiles, paths.manifest, paths.mesh)
+    z_offset_m = source_z_offset(open_dem(paths.dem))
     logger.info("normalized mesh Z values by subtracting {:.3f} m", z_offset_m)
     logger.info("completed mesh generation: {} meshes", mesh_count)
-    logger.info("updating metadata: {}", paths["metadata"])
+    logger.info("updating metadata: {}", paths.metadata)
     metadata = update_metadata(
-        paths["metadata"],
+        paths.metadata,
         config.world_name,
         {
-            "mesh": mesh_metadata(mesh_count, paths["mesh"], z_offset_m),
+            "mesh": mesh_metadata(mesh_count, paths.mesh, z_offset_m),
         },
     )
-    click.echo(f"created {mesh_count} meshes in {paths['mesh']}")
+    click.echo(f"created {mesh_count} meshes in {paths.mesh}")
 
     logger.info("starting Gazebo generation for world {}", config.world_name)
-    logger.debug("Gazebo output directory: {}", paths["gz"])
+    logger.debug("Gazebo output directory: {}", paths.gz)
     gazebo_info = generate_gazebo_worlds(
-        paths["manifest"],
-        paths["mesh"],
+        paths.manifest,
+        paths.mesh,
         config.texture,
-        paths["gz"],
+        paths.gz,
         config.world_name,
         config.level_z_size_m,
     )
-    model_count = int(gazebo_info["model_count"])
+    model_count = int(gazebo_info.model_count)
     logger.info("completed Gazebo generation: {} models", model_count)
-    logger.info("updating metadata: {}", paths["metadata"])
+    logger.info("updating metadata: {}", paths.metadata)
     metadata = update_metadata(
-        paths["metadata"],
+        paths.metadata,
         config.world_name,
         {
-            "gazebo": gazebo_metadata(model_count, paths["gz"], gazebo_info),
+            "gazebo": gazebo_metadata(model_count, paths.gz, gazebo_info),
         },
     )
-    click.echo(f"created {model_count} models in {paths['gz'] / 'models'}")
-    click.echo(f"created world: {paths['gz'] / 'levels_terrain.sdf'}")
+    click.echo(f"created {model_count} models in {paths.gz / 'models'}")
+    click.echo(f"created world: {paths.gz / 'levels_terrain.sdf'}")
 
     logger.info("starting browser viewer generation for world {}", config.world_name)
-    viewer_info = generate_viewer(paths["dem"], paths["tiles"], paths["manifest"], paths["viewer"])
+    viewer_info = generate_viewer(paths.dem, paths.tiles, paths.manifest, paths.viewer)
     logger.info("completed browser viewer generation for world {}", config.world_name)
-    logger.info("updating metadata: {}", paths["metadata"])
+    logger.info("updating metadata: {}", paths.metadata)
     metadata = update_metadata(
-        paths["metadata"],
+        paths.metadata,
         config.world_name,
         {
             "viewer": viewer_metadata(viewer_info),
         },
     )
-    click.echo(f"created viewer: {paths['viewer'] / 'index.html'}")
+    click.echo(f"created viewer: {paths.viewer / 'index.html'}")
     click.echo(f"serve viewer: {viewer_command(config.world_name, config.output_dir)}")
-    click.echo(f"metadata: {paths['metadata']}")
-    echo_banner(format_completion_summary(metadata, paths["metadata"]))
+    click.echo(f"metadata: {paths.metadata}")
+    echo_banner(format_completion_summary(metadata, paths.metadata))
     logger.info("completed full terrain pipeline for world {}", config.world_name)
     return paths
 
 
-def run_application(config: TerrainGenerationConfig) -> dict[str, Path]:
+def run_application(config: TerrainGenerationConfig) -> WorldPaths:
     configure_logging(config.log_level)
     paths = default_paths(config.output_dir, config.world_name)
-    reset_existing_world_output(paths["world"])
-    echo_banner(format_start_banner(__version__, config.world_name, paths["world"]))
+    reset_existing_world_output(paths.world)
+    echo_banner(format_start_banner(__version__, config.world_name, paths.world))
     return run_pipeline(config)
 
 

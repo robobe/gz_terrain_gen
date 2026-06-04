@@ -4,6 +4,7 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
+from gz_terrain_gen.gazebo import GazeboGenerationResult
 from gz_terrain_gen.metadata import (
     dem_metadata,
     gazebo_metadata,
@@ -12,6 +13,7 @@ from gz_terrain_gen.metadata import (
     update_metadata,
     viewer_metadata,
 )
+from gz_terrain_gen.viewer import ViewerGenerationResult
 
 
 def test_metadata_writes_expected_keys_and_elevation_stats(tmp_path) -> None:
@@ -57,13 +59,13 @@ def test_metadata_writes_expected_keys_and_elevation_stats(tmp_path) -> None:
 def test_viewer_metadata_contains_expected_paths(tmp_path) -> None:
     viewer_dir = tmp_path / "viewer"
     metadata = viewer_metadata(
-        {
-            "viewer_dir": viewer_dir,
-            "glb_path": viewer_dir / "terrain.glb",
-            "html_path": viewer_dir / "index.html",
-            "vertex_count": 8,
-            "face_count": 4,
-        }
+        ViewerGenerationResult(
+            viewer_dir=viewer_dir,
+            glb_path=viewer_dir / "terrain.glb",
+            html_path=viewer_dir / "index.html",
+            vertex_count=8,
+            face_count=4,
+        )
     )
 
     assert metadata["viewer_dir"] == str(viewer_dir)
@@ -86,11 +88,12 @@ def test_gazebo_metadata_records_probe_camera_and_level_z_size(tmp_path) -> None
     metadata = gazebo_metadata(
         2,
         tmp_path / "gz",
-        {
-            "probe_pose": {"x": 100.0, "y": 100.0, "z": 70.0},
-            "gui_camera_pose": "100.000 100.000 140.000 0 1.5708 0",
-            "level_z_size_m": 1500.0,
-        },
+        GazeboGenerationResult(
+            model_count=2,
+            probe_pose={"x": 100.0, "y": 100.0, "z": 70.0},
+            gui_camera_pose="100.000 100.000 140.000 0 1.5708 0",
+            level_z_size_m=1500.0,
+        ),
     )
 
     assert metadata["model_count"] == 2
