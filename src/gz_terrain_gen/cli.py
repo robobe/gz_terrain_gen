@@ -6,7 +6,7 @@ import click
 from loguru import logger
 
 from gz_terrain_gen import __version__
-from gz_terrain_gen.gazebo import generate_gazebo_worlds
+from gz_terrain_gen.gazebo import DEFAULT_LEVEL_Z_SIZE_M, generate_gazebo_worlds
 from gz_terrain_gen.log_config import LOG_LEVELS, configure_logging
 from gz_terrain_gen.mesh import generate_meshes, open_dem, source_z_offset
 from gz_terrain_gen.metadata import (
@@ -150,6 +150,7 @@ def run_pipeline(
     center_lon: float,
     size_km: float,
     tile_m: int,
+    level_z_size_m: float,
     texture: Path,
     dem_file: Path | None = None,
 ) -> dict[str, Path]:
@@ -228,14 +229,22 @@ def run_pipeline(
 
     logger.info("starting Gazebo generation for world {}", world_name)
     logger.debug("Gazebo output directory: {}", paths["gz"])
-    model_count = generate_gazebo_worlds(paths["manifest"], paths["mesh"], texture, paths["gz"], world_name)
+    gazebo_info = generate_gazebo_worlds(
+        paths["manifest"],
+        paths["mesh"],
+        texture,
+        paths["gz"],
+        world_name,
+        level_z_size_m,
+    )
+    model_count = int(gazebo_info["model_count"])
     logger.info("completed Gazebo generation: {} models", model_count)
     logger.info("updating metadata: {}", paths["metadata"])
     metadata = update_metadata(
         paths["metadata"],
         world_name,
         {
-            "gazebo": gazebo_metadata(model_count, paths["gz"]),
+            "gazebo": gazebo_metadata(model_count, paths["gz"], gazebo_info),
         },
     )
     click.echo(f"created {model_count} models in {paths['gz'] / 'models'}")
@@ -287,9 +296,17 @@ def run_pipeline(
 @click.option("--size-km", type=float, default=DEFAULT_SIZE_KM, show_default=True)
 @click.option("--tile-m", type=int, default=DEFAULT_TILE_M, show_default=True)
 @click.option(
+    "--level-z-size-m",
+    type=float,
+    default=DEFAULT_LEVEL_Z_SIZE_M,
+    show_default=True,
+    help="Z size in meters for each Gazebo level geometry box.",
+)
+@click.option(
     "--dem-file",
     type=click.Path(path_type=Path, exists=True, dir_okay=False),
     help="Use an existing GeoTIFF DEM instead of downloading one.",
+    default=None,
 )
 @click.option(
     "--texture",
@@ -305,6 +322,7 @@ def cli(
     center_lon: float,
     size_km: float,
     tile_m: int,
+    level_z_size_m: float,
     dem_file: Path | None,
     texture: Path,
 ) -> None:
@@ -312,4 +330,14 @@ def cli(
     paths = default_paths(output_dir, world_name)
     reset_existing_world_output(paths["world"])
     echo_banner(format_start_banner(__version__, world_name, paths["world"]))
-    run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, texture, dem_file)
+    run_pipeline(
+        world_name,
+        output_dir,
+        center_lat,
+        center_lon,
+        size_km,
+        tile_m,
+        level_z_size_m,
+        texture,
+        dem_file,
+    )

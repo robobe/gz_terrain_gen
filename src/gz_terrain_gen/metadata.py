@@ -124,8 +124,8 @@ def mesh_metadata(mesh_count: int, mesh_dir: Path, z_offset_m: float = 0.0) -> d
     }
 
 
-def gazebo_metadata(model_count: int, gz_dir: Path) -> dict[str, Any]:
-    return {
+def gazebo_metadata(model_count: int, gz_dir: Path, generation_info: dict[str, Any] | None = None) -> dict[str, Any]:
+    metadata = {
         "model_count": model_count,
         "gz_dir": str(gz_dir),
         "models_dir": str(gz_dir / "models"),
@@ -133,6 +133,15 @@ def gazebo_metadata(model_count: int, gz_dir: Path) -> dict[str, Any]:
         "single_tile_sdf": str(gz_dir / "single_tile_terrain.sdf"),
         "travel_script": str(gz_dir / "travel_levels.sh"),
     }
+    if generation_info:
+        metadata.update(
+            {
+                "probe_pose": generation_info.get("probe_pose"),
+                "gui_camera_pose": generation_info.get("gui_camera_pose"),
+                "level_z_size_m": generation_info.get("level_z_size_m"),
+            }
+        )
+    return metadata
 
 
 def viewer_metadata(viewer_info: dict[str, Any]) -> dict[str, Any]:

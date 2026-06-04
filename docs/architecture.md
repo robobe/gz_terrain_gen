@@ -100,7 +100,12 @@ Responsibilities:
   the first tile and performer start position.
 - Creates a `level_probe` performer model and
   `outputs/<world-name>/gz/travel_levels.sh`.
-- Records Gazebo output paths and model count in `metadata.json`.
+- Places `level_probe` 30 m above the first tile center elevation and the GUI
+  camera 100 m above the same point.
+- Creates level geometry boxes whose X/Y size follows each tile and whose Z
+  size defaults to 1500 m through `--level-z-size-m`.
+- Records Gazebo output paths, model count, probe pose, camera pose, and level
+  Z size in `metadata.json`.
 
 Important contract:
 

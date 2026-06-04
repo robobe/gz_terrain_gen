@@ -22,6 +22,7 @@ def test_cli_help_loads_without_subcommands() -> None:
     assert "--center-lon" in result.output
     assert "--size-km" in result.output
     assert "--tile-m" in result.output
+    assert "--level-z-size-m" in result.output
     assert "--texture" in result.output
     assert "--output-dir" in result.output
     assert "--dem-file" in result.output
@@ -134,9 +135,10 @@ def test_validate_world_name_rejects_unsafe_names(world_name: str) -> None:
 def test_world_name_defaults_to_terrain_world(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     captured = {}
 
-    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, texture, dem_file):
+    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, level_z_size_m, texture, dem_file):
         captured["world_name"] = world_name
         captured["output_dir"] = output_dir
+        captured["level_z_size_m"] = level_z_size_m
         captured["dem_file"] = dem_file
         return default_paths(output_dir, world_name)
 
@@ -147,6 +149,7 @@ def test_world_name_defaults_to_terrain_world(monkeypatch: pytest.MonkeyPatch, t
     assert result.exit_code == 0
     assert captured["world_name"] == DEFAULT_WORLD_NAME
     assert captured["output_dir"] == tmp_path
+    assert captured["level_z_size_m"] == 1500
     assert captured["dem_file"] is None
     assert "GZ Terrain Generator" in result.output
     assert "Version: 0.1.0" in result.output
@@ -191,7 +194,7 @@ def test_existing_world_folder_confirm_removes_before_pipeline(monkeypatch: pyte
     marker.write_text("remove")
     captured = {}
 
-    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, texture, dem_file):
+    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, level_z_size_m, texture, dem_file):
         captured["world_exists"] = (output_dir / world_name).exists()
         return default_paths(output_dir, world_name)
 
@@ -213,8 +216,9 @@ def test_cli_passes_existing_dem_file_to_pipeline(monkeypatch: pytest.MonkeyPatc
     write_test_dem(dem_path)
     captured = {}
 
-    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, texture, dem_file):
+    def fake_run_pipeline(world_name, output_dir, center_lat, center_lon, size_km, tile_m, level_z_size_m, texture, dem_file):
         captured["dem_file"] = dem_file
+        captured["level_z_size_m"] = level_z_size_m
         return default_paths(output_dir, world_name)
 
     monkeypatch.setattr("gz_terrain_gen.cli.run_pipeline", fake_run_pipeline)
@@ -226,6 +230,7 @@ def test_cli_passes_existing_dem_file_to_pipeline(monkeypatch: pytest.MonkeyPatc
 
     assert result.exit_code == 0
     assert captured["dem_file"] == dem_path
+    assert captured["level_z_size_m"] == 1500
 
 
 def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -241,7 +246,15 @@ def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: p
     monkeypatch.setattr("gz_terrain_gen.cli.download_dem", fail_download)
     monkeypatch.setattr("gz_terrain_gen.cli.split_dem", lambda dem, tiles, tile_m: (0, tiles / "tiles.csv"))
     monkeypatch.setattr("gz_terrain_gen.cli.generate_meshes", lambda source_dem, tiles_dir, manifest_path, mesh_dir: 0)
-    monkeypatch.setattr("gz_terrain_gen.cli.generate_gazebo_worlds", lambda manifest, mesh, texture, gz, world: 0)
+    monkeypatch.setattr(
+        "gz_terrain_gen.cli.generate_gazebo_worlds",
+        lambda manifest, mesh, texture, gz, world, level_z_size_m: {
+            "model_count": 0,
+            "probe_pose": {"x": 0.0, "y": 0.0, "z": 30.0},
+            "gui_camera_pose": "0.000 0.000 100.000 0 1.5708 0",
+            "level_z_size_m": level_z_size_m,
+        },
+    )
     monkeypatch.setattr(
         "gz_terrain_gen.cli.generate_viewer",
         lambda source_dem, tiles_dir, manifest_path, viewer_dir: {
@@ -260,6 +273,7 @@ def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: p
         34.0,
         1.0,
         200,
+        1500,
         tmp_path / "texture.jpg",
         dem_path,
     )

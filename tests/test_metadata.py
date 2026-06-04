@@ -4,7 +4,14 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from gz_terrain_gen.metadata import dem_metadata, mesh_metadata, requested_area_metadata, update_metadata, viewer_metadata
+from gz_terrain_gen.metadata import (
+    dem_metadata,
+    gazebo_metadata,
+    mesh_metadata,
+    requested_area_metadata,
+    update_metadata,
+    viewer_metadata,
+)
 
 
 def test_metadata_writes_expected_keys_and_elevation_stats(tmp_path) -> None:
@@ -73,3 +80,20 @@ def test_mesh_metadata_records_z_normalization(tmp_path) -> None:
     assert metadata["mesh_dir"] == str(tmp_path / "mesh")
     assert metadata["normalized_to_gazebo_z_zero"] is True
     assert metadata["z_offset_m"] == 42.5
+
+
+def test_gazebo_metadata_records_probe_camera_and_level_z_size(tmp_path) -> None:
+    metadata = gazebo_metadata(
+        2,
+        tmp_path / "gz",
+        {
+            "probe_pose": {"x": 100.0, "y": 100.0, "z": 70.0},
+            "gui_camera_pose": "100.000 100.000 140.000 0 1.5708 0",
+            "level_z_size_m": 1500.0,
+        },
+    )
+
+    assert metadata["model_count"] == 2
+    assert metadata["probe_pose"] == {"x": 100.0, "y": 100.0, "z": 70.0}
+    assert metadata["gui_camera_pose"] == "100.000 100.000 140.000 0 1.5708 0"
+    assert metadata["level_z_size_m"] == 1500.0

@@ -5,7 +5,9 @@ import xml.etree.ElementTree as ET
 
 LEVEL_BUFFER_M = 30
 LEVEL_Z_CENTER_M = 0
-LEVEL_Z_SIZE_M = 200
+DEFAULT_LEVEL_Z_SIZE_M = 1500
+PROBE_CLEARANCE_M = 30
+CAMERA_CLEARANCE_M = 100
 PROBE_MODEL = "level_probe"
 COLLADA_NS = "http://www.collada.org/2005/11/COLLADASchema"
 GUI_TEMPLATE = Path(__file__).parents[1] / "templates" / "gz_gui.xml"
@@ -93,7 +95,7 @@ def write_probe_model(models_dir: Path) -> None:
 <sdf version="1.10">
   <model name="{PROBE_MODEL}">
     <static>false</static>
-    <pose>0 0 80 0 0 0</pose>
+    <pose>0 0 0 0 0 0</pose>
     <link name="link">
       <kinematic>true</kinematic>
       <inertial>
@@ -245,7 +247,7 @@ def tile_size_m(tile: dict[str, str]) -> tuple[float, float]:
     return width * 2.0, height * 2.0
 
 
-def dae_max_elevation(path: Path) -> float:
+def dae_vertices(path: Path) -> list[tuple[float, float, float]]:
     tree = ET.parse(path)
     root = tree.getroot()
     ns = {"c": COLLADA_NS}
@@ -255,8 +257,31 @@ def dae_max_elevation(path: Path) -> float:
 
     values = [float(value) for value in positions.text.split()]
     if len(values) < 3:
+        return []
+    return [
+        (values[index], values[index + 1], values[index + 2])
+        for index in range(0, len(values), 3)
+    ]
+
+
+def dae_max_elevation(path: Path) -> float:
+    vertices = dae_vertices(path)
+    if not vertices:
         return 0.0
-    return max(values[index] for index in range(2, len(values), 3))
+    return max(z for _x, _y, z in vertices)
+
+
+def dae_center_elevation(path: Path) -> float:
+    vertices = dae_vertices(path)
+    if not vertices:
+        return 0.0
+
+    for x, y, z in vertices:
+        if abs(x) < 1e-6 and abs(y) < 1e-6:
+            return z
+
+    _x, _y, z = min(vertices, key=lambda vertex: (vertex[0] * vertex[0]) + (vertex[1] * vertex[1]))
+    return z
 
 
 def terrain_max_elevation(mesh_dir: Path, tiles: list[dict[str, str]]) -> float:
@@ -267,6 +292,16 @@ def terrain_max_elevation(mesh_dir: Path, tiles: list[dict[str, str]]) -> float:
             continue
         max_elevation = max(max_elevation, dae_max_elevation(mesh_path))
     return max_elevation
+
+
+def first_tile_center_elevation(mesh_dir: Path, tiles: list[dict[str, str]]) -> float:
+    if not tiles:
+        return 0.0
+
+    mesh_path = mesh_dir / f"{Path(tiles[0]['file']).stem}.dae"
+    if not mesh_path.exists():
+        raise FileNotFoundError(f"missing mesh: {mesh_path}")
+    return dae_center_elevation(mesh_path)
 
 
 def terrain_footprint_m(tiles: list[dict[str, str]]) -> tuple[float, float]:
@@ -280,21 +315,21 @@ def terrain_footprint_m(tiles: list[dict[str, str]]) -> tuple[float, float]:
     return east - west, north - south
 
 
-def camera_height_m(tiles: list[dict[str, str]], max_elevation_m: float) -> float:
-    size_x, size_y = terrain_footprint_m(tiles)
-    clearance = max(100.0, max(size_x, size_y) * 0.75)
-    return max_elevation_m + clearance
+def first_tile_center_xy(tiles: list[dict[str, str]]) -> tuple[float, float]:
+    if not tiles:
+        return 0.0, 0.0
+    return float(tiles[0]["gazebo_center_x_m"]), float(tiles[0]["gazebo_center_y_m"])
 
 
-def camera_pose(tiles: list[dict[str, str]], max_elevation_m: float) -> str:
-    if tiles:
-        x = float(tiles[0]["gazebo_center_x_m"])
-        y = float(tiles[0]["gazebo_center_y_m"])
-    else:
-        x = 0.0
-        y = 0.0
-    z = camera_height_m(tiles, max_elevation_m)
+def camera_pose(tiles: list[dict[str, str]], first_tile_elevation_m: float = 0.0) -> str:
+    x, y = first_tile_center_xy(tiles)
+    z = first_tile_elevation_m + CAMERA_CLEARANCE_M
     return f"{x:.3f} {y:.3f} {z:.3f} 0 1.5708 0"
+
+
+def probe_pose(tiles: list[dict[str, str]], first_tile_elevation_m: float = 0.0) -> tuple[float, float, float]:
+    x, y = first_tile_center_xy(tiles)
+    return x, y, first_tile_elevation_m + PROBE_CLEARANCE_M
 
 
 def render_gui(camera_pose_value: str, template_path: Path = GUI_TEMPLATE) -> str:
@@ -333,7 +368,12 @@ def create_models(tiles: list[dict[str, str]], mesh_dir: Path, texture: Path, mo
     write_probe_model(models_dir)
 
 
-def world_sdf(tiles: list[dict[str, str]], world_name: str, max_elevation_m: float = 0.0) -> str:
+def world_sdf(
+    tiles: list[dict[str, str]],
+    world_name: str,
+    first_tile_elevation_m: float = 0.0,
+    level_z_size_m: float = DEFAULT_LEVEL_Z_SIZE_M,
+) -> str:
     includes = []
     levels = []
 
@@ -343,8 +383,8 @@ def world_sdf(tiles: list[dict[str, str]], world_name: str, max_elevation_m: flo
         x = float(tile["gazebo_center_x_m"])
         y = float(tile["gazebo_center_y_m"])
         size_x, size_y = tile_size_m(tile)
-        level_size_x = size_x + (2 * LEVEL_BUFFER_M)
-        level_size_y = size_y + (2 * LEVEL_BUFFER_M)
+        level_size_x = size_x
+        level_size_y = size_y
 
         includes.append(
             f"""    <include>
@@ -359,7 +399,7 @@ def world_sdf(tiles: list[dict[str, str]], world_name: str, max_elevation_m: flo
         <pose>{x:.3f} {y:.3f} {LEVEL_Z_CENTER_M:.3f} 0 0 0</pose>
         <geometry>
           <box>
-            <size>{level_size_x:.3f} {level_size_y:.3f} {LEVEL_Z_SIZE_M:.3f}</size>
+            <size>{level_size_x:.3f} {level_size_y:.3f} {level_z_size_m:.3f}</size>
           </box>
         </geometry>
         <buffer>{LEVEL_BUFFER_M}</buffer>
@@ -369,9 +409,8 @@ def world_sdf(tiles: list[dict[str, str]], world_name: str, max_elevation_m: flo
 
     includes_xml = "\n\n".join(includes)
     levels_xml = "\n\n".join(levels)
-    first_x = float(tiles[0]["gazebo_center_x_m"])
-    first_y = float(tiles[0]["gazebo_center_y_m"])
-    gui_xml = render_gui(camera_pose(tiles, max_elevation_m))
+    first_x, first_y, first_z = probe_pose(tiles, first_tile_elevation_m)
+    gui_xml = render_gui(camera_pose(tiles, first_tile_elevation_m))
 
     return f"""<?xml version="1.0"?>
 <sdf version="1.10">
@@ -401,7 +440,7 @@ def world_sdf(tiles: list[dict[str, str]], world_name: str, max_elevation_m: flo
     <include>
       <name>{PROBE_MODEL}</name>
       <uri>model://{PROBE_MODEL}</uri>
-      <pose>{first_x:.3f} {first_y:.3f} 80 0 0 0</pose>
+      <pose>{first_x:.3f} {first_y:.3f} {first_z:.3f} 0 0 0</pose>
     </include>
 
     <plugin name="gz::sim" filename="dummy">
@@ -421,7 +460,7 @@ def world_sdf(tiles: list[dict[str, str]], world_name: str, max_elevation_m: flo
 """
 
 
-def single_world_sdf(tiles: list[dict[str, str]] | None = None, max_elevation_m: float = 0.0) -> str:
+def single_world_sdf(tiles: list[dict[str, str]] | None = None, first_tile_elevation_m: float = 0.0) -> str:
     if tiles:
         first_x = float(tiles[0]["gazebo_center_x_m"])
         first_y = float(tiles[0]["gazebo_center_y_m"])
@@ -430,7 +469,7 @@ def single_world_sdf(tiles: list[dict[str, str]] | None = None, max_elevation_m:
         first_x = 0.0
         first_y = 0.0
         camera_tiles = []
-    gui_xml = render_gui(camera_pose(camera_tiles, max_elevation_m))
+    gui_xml = render_gui(camera_pose(camera_tiles, first_tile_elevation_m))
 
     return f"""<?xml version="1.0"?>
 <sdf version="1.10">
@@ -465,13 +504,13 @@ def single_world_sdf(tiles: list[dict[str, str]] | None = None, max_elevation_m:
 """
 
 
-def travel_script(tiles: list[dict[str, str]], world_name: str) -> str:
+def travel_script(tiles: list[dict[str, str]], world_name: str, probe_z_m: float = 80.0) -> str:
     commands = [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
         "",
         f'WORLD="${{1:-{world_name}}}"',
-        'Z="${Z:-80}"',
+        f'Z="${{Z:-{probe_z_m:.3f}}}"',
         'SLEEP_S="${SLEEP_S:-1.0}"',
         'SERVICE="/world/${WORLD}/set_pose"',
         "",
@@ -528,7 +567,14 @@ behavior is not exercised.
 """
 
 
-def generate_gazebo_worlds(manifest_path: Path, mesh_dir: Path, texture: Path, gz_dir: Path, world_name: str) -> int:
+def generate_gazebo_worlds(
+    manifest_path: Path,
+    mesh_dir: Path,
+    texture: Path,
+    gz_dir: Path,
+    world_name: str,
+    level_z_size_m: float = DEFAULT_LEVEL_Z_SIZE_M,
+) -> dict[str, object]:
     if not manifest_path.exists():
         raise FileNotFoundError(f"missing tile manifest: {manifest_path}")
     if not texture.exists():
@@ -538,15 +584,24 @@ def generate_gazebo_worlds(manifest_path: Path, mesh_dir: Path, texture: Path, g
     if not tiles:
         raise RuntimeError(f"tile manifest is empty: {manifest_path}")
 
-    max_elevation_m = terrain_max_elevation(mesh_dir, tiles)
+    first_tile_elevation_m = first_tile_center_elevation(mesh_dir, tiles)
+    probe_x, probe_y, probe_z = probe_pose(tiles, first_tile_elevation_m)
+    camera_pose_value = camera_pose(tiles, first_tile_elevation_m)
     models_dir = gz_dir / "models"
     create_models(tiles, mesh_dir, texture, models_dir)
     gz_dir.mkdir(parents=True, exist_ok=True)
 
-    (gz_dir / "levels_terrain.sdf").write_text(world_sdf(tiles, world_name, max_elevation_m))
-    (gz_dir / "single_tile_terrain.sdf").write_text(single_world_sdf(tiles, max_elevation_m))
+    (gz_dir / "levels_terrain.sdf").write_text(
+        world_sdf(tiles, world_name, first_tile_elevation_m, level_z_size_m)
+    )
+    (gz_dir / "single_tile_terrain.sdf").write_text(single_world_sdf(tiles, first_tile_elevation_m))
     travel_path = gz_dir / "travel_levels.sh"
-    travel_path.write_text(travel_script(tiles, world_name))
+    travel_path.write_text(travel_script(tiles, world_name, probe_z))
     travel_path.chmod(0o755)
     (gz_dir / "README.md").write_text(readme_text())
-    return len(tiles)
+    return {
+        "model_count": len(tiles),
+        "probe_pose": {"x": probe_x, "y": probe_y, "z": probe_z},
+        "gui_camera_pose": camera_pose_value,
+        "level_z_size_m": level_z_size_m,
+    }

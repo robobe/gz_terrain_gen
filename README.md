@@ -110,11 +110,14 @@ uv run gz-terrain-gen
 uv run gz-terrain-gen --world-name demo_world
 uv run gz-terrain-gen --world-name demo_world --center-lat 30.853205 --center-lon 34.447382 --size-km 1.0
 uv run gz-terrain-gen --world-name demo_world --dem-file /path/to/dem.tif
+uv run gz-terrain-gen --world-name demo_world --level-z-size-m 1500
 uv run gz-terrain-gen-viewer --world-name demo_world
 ```
 
 `--world-name` is optional and defaults to `terrain_world`. Use `--output-dir`
-to choose a different generated artifact root.
+to choose a different generated artifact root. Gazebo level geometry Z size
+defaults to `1500` meters and can be changed with `--level-z-size-m`; level X/Y
+size is generated from each tile size.
 
 ```bash
 uv run gz-terrain-gen --help
