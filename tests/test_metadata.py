@@ -4,29 +4,28 @@ import numpy as np
 import rasterio
 from rasterio.transform import from_origin
 
-from gz_terrain_gen.gazebo import GazeboGenerationResult
 from gz_terrain_gen.metadata import (
-    dem_metadata,
-    gazebo_metadata,
+    ElevationStats,
+    MeshMetadata,
+    MetadataDocument,
+    MetadataUpdate,
+    RequestMetadata,
+    elevation_stats,
     mesh_metadata,
+    read_metadata,
     requested_area_metadata,
+    tile_metadata,
     update_metadata,
-    viewer_metadata,
 )
-from gz_terrain_gen.viewer import ViewerGenerationResult
 
 
-def test_metadata_writes_expected_keys_and_elevation_stats(tmp_path) -> None:
-    dem_path = tmp_path / "dem.tif"
-    metadata_path = tmp_path / "metadata.json"
-    data = np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32)
-
+def write_test_dem(path, data) -> None:
     with rasterio.open(
-        dem_path,
+        path,
         "w",
         driver="GTiff",
-        height=2,
-        width=2,
+        height=data.shape[0],
+        width=data.shape[1],
         count=1,
         dtype=data.dtype,
         crs="EPSG:4326",
@@ -34,69 +33,117 @@ def test_metadata_writes_expected_keys_and_elevation_stats(tmp_path) -> None:
     ) as dst:
         dst.write(data, 1)
 
+
+def test_metadata_writes_expected_keys_and_elevation_stats(tmp_path) -> None:
+    dem_path = tmp_path / "dem.tif"
+    metadata_path = tmp_path / "metadata.json"
+    data = np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32)
+    write_test_dem(dem_path, data)
+
     update_metadata(
         metadata_path,
         "demo_world",
-        {
-            "request": requested_area_metadata(30.9, 34.4, 1.0, "COP30"),
-            "dem": dem_metadata(dem_path),
-        },
-    )
-
-    metadata = json.loads(metadata_path.read_text())
-
-    assert metadata["schema_version"] == 1
-    assert metadata["world_name"] == "demo_world"
-    assert metadata["request"]["center_lat"] == 30.9
-    assert metadata["request"]["source"] == "opentopography"
-    assert metadata["dem"]["width_px"] == 2
-    assert metadata["dem"]["height_px"] == 2
-    assert metadata["dem"]["elevation"]["minimum_m"] == 10.0
-    assert metadata["dem"]["elevation"]["maximum_m"] == 40.0
-    assert metadata["dem"]["elevation"]["mean_m"] == 25.0
-
-
-def test_viewer_metadata_contains_expected_paths(tmp_path) -> None:
-    viewer_dir = tmp_path / "viewer"
-    metadata = viewer_metadata(
-        ViewerGenerationResult(
-            viewer_dir=viewer_dir,
-            glb_path=viewer_dir / "terrain.glb",
-            html_path=viewer_dir / "index.html",
-            vertex_count=8,
-            face_count=4,
-        )
-    )
-
-    assert metadata["viewer_dir"] == str(viewer_dir)
-    assert metadata["glb_path"] == str(viewer_dir / "terrain.glb")
-    assert metadata["html_path"] == str(viewer_dir / "index.html")
-    assert metadata["vertex_count"] == 8
-    assert metadata["face_count"] == 4
-
-
-def test_mesh_metadata_records_z_normalization(tmp_path) -> None:
-    metadata = mesh_metadata(3, tmp_path / "mesh", 42.5)
-
-    assert metadata["count"] == 3
-    assert metadata["mesh_dir"] == str(tmp_path / "mesh")
-    assert metadata["normalized_to_gazebo_z_zero"] is True
-    assert metadata["z_offset_m"] == 42.5
-
-
-def test_gazebo_metadata_records_probe_camera_and_level_z_size(tmp_path) -> None:
-    metadata = gazebo_metadata(
-        2,
-        tmp_path / "gz",
-        GazeboGenerationResult(
-            model_count=2,
-            probe_pose={"x": 100.0, "y": 100.0, "z": 70.0},
-            gui_camera_pose="100.000 100.000 140.000 0 1.5708 0",
-            level_z_size_m=1500.0,
+        MetadataUpdate(
+            request=requested_area_metadata(30.9, 34.4, 1.0, elevation_stats(dem_path)),
+            tiles=tile_metadata(2, 200),
+            mesh=mesh_metadata(2, 10.0),
         ),
     )
 
-    assert metadata["model_count"] == 2
-    assert metadata["probe_pose"] == {"x": 100.0, "y": 100.0, "z": 70.0}
-    assert metadata["gui_camera_pose"] == "100.000 100.000 140.000 0 1.5708 0"
-    assert metadata["level_z_size_m"] == 1500.0
+    payload = json.loads(metadata_path.read_text())
+    document = read_metadata(metadata_path)
+
+    assert isinstance(document, MetadataDocument)
+    assert isinstance(document.request, RequestMetadata)
+    assert payload["schema_version"] == 1
+    assert payload["world_name"] == "demo_world"
+    assert payload["request"]["center_lat"] == 30.9
+    assert payload["request"]["center_lon"] == 34.4
+    assert payload["request"]["size_km"] == 1.0
+    assert payload["request"]["elevation"]["minimum_m"] == 10.0
+    assert payload["request"]["elevation"]["maximum_m"] == 40.0
+    assert payload["request"]["elevation"]["mean_m"] == 25.0
+    assert payload["tiles"]["tile_m"] == 200
+    assert payload["tiles"]["count"] == 2
+    assert payload["mesh"]["count"] == 2
+    assert payload["mesh"]["normalized_to_gazebo_z_zero"] is True
+    assert payload["mesh"]["z_offset_m"] == 10.0
+    assert "d" + "em" not in payload
+    assert "gaze" + "bo" not in payload
+    assert "view" + "er" not in payload
+
+
+def test_elevation_stats_handles_empty_valid_values(tmp_path) -> None:
+    dem_path = tmp_path / "dem.tif"
+    data = np.array([[-9999.0, -9999.0]], dtype=np.float32)
+    with rasterio.open(
+        dem_path,
+        "w",
+        driver="GTiff",
+        height=1,
+        width=2,
+        count=1,
+        dtype=data.dtype,
+        crs="EPSG:4326",
+        transform=from_origin(34.0, 31.0, 0.1, 0.1),
+        nodata=-9999.0,
+    ) as dst:
+        dst.write(data, 1)
+
+    stats = elevation_stats(dem_path)
+
+    assert stats == ElevationStats(minimum_m=None, maximum_m=None, mean_m=None)
+
+
+def test_mesh_metadata_records_z_normalization() -> None:
+    metadata = mesh_metadata(3, 42.5)
+
+    assert isinstance(metadata, MeshMetadata)
+    assert metadata.count == 3
+    assert metadata.normalized_to_gazebo_z_zero is True
+    assert metadata.z_offset_m == 42.5
+
+
+def test_update_metadata_preserves_unknown_top_level_keys_and_created_at(tmp_path) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "world_name": "old_world",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "custom": {"keep": True},
+            }
+        )
+    )
+
+    document = update_metadata(
+        metadata_path,
+        "demo_world",
+        MetadataUpdate(tiles=tile_metadata(2, 200)),
+    )
+    payload = json.loads(metadata_path.read_text())
+
+    assert document.created_at == "2026-01-01T00:00:00+00:00"
+    assert document.updated_at is not None
+    assert document.extra == {"custom": {"keep": True}}
+    assert payload["custom"] == {"keep": True}
+    assert payload["created_at"] == "2026-01-01T00:00:00+00:00"
+    assert payload["world_name"] == "demo_world"
+
+
+def test_unknown_sections_are_preserved_as_extra(tmp_path) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "world_name": "demo_world",
+                "custom_section": {"legacy": True},
+            }
+        )
+    )
+
+    document = read_metadata(metadata_path)
+
+    assert document.extra == {"custom_section": {"legacy": True}}

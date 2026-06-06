@@ -1,5 +1,6 @@
 import shutil
 import shlex
+from dataclasses import dataclass
 from pathlib import Path
 
 import click
@@ -7,22 +8,40 @@ from loguru import logger
 
 from gz_terrain_gen import __version__
 from gz_terrain_gen.cli import TerrainGenerationConfig, parse_args
-from gz_terrain_gen.gazebo import generate_gazebo_worlds
+from gz_terrain_gen.gazebo import GazeboGenerationResult, generate_gazebo_worlds
 from gz_terrain_gen.log_config import configure_logging
 from gz_terrain_gen.mesh import generate_meshes, open_dem, source_z_offset
 from gz_terrain_gen.metadata import (
-    dem_metadata,
-    gazebo_metadata,
+    MetadataDocument,
+    MetadataUpdate,
+    RequestMetadata,
+    elevation_stats,
     mesh_metadata,
     requested_area_metadata,
     tile_metadata,
     update_metadata,
-    viewer_metadata,
 )
 from gz_terrain_gen.opentopo import DEFAULT_DEM_TYPE, download_dem
 from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR, WorldPaths, default_paths
 from gz_terrain_gen.tiling import split_dem
-from gz_terrain_gen.viewer import generate_viewer
+from gz_terrain_gen.viewer import ViewerGenerationResult, generate_viewer
+
+
+@dataclass(frozen=True)
+class DemStageResult:
+    request_metadata: RequestMetadata
+
+
+@dataclass(frozen=True)
+class TileStageResult:
+    tile_count: int
+    manifest: Path
+
+
+@dataclass(frozen=True)
+class MeshStageResult:
+    mesh_count: int
+    z_offset_m: float
 
 
 def reset_existing_world_output(world_dir: Path) -> None:
@@ -65,45 +84,44 @@ def format_number(value: object, precision: int = 3) -> str:
     return str(value)
 
 
-def format_completion_summary(metadata: dict, metadata_path: Path) -> str:
-    request = metadata.get("request", {})
-    dem = metadata.get("dem", {})
-    elevation = dem.get("elevation", {})
-    bounds = request.get("bounds", {})
-    mesh = metadata.get("mesh", {})
-    tiles = metadata.get("tiles", {})
-    gazebo = metadata.get("gazebo", {})
-    viewer = metadata.get("viewer", {})
-    size_km = request.get("size_km")
+def format_completion_summary(metadata: MetadataDocument, metadata_path: Path) -> str:
+    request = metadata.request
+    elevation = request.elevation if request else None
+    bounds = request.bounds if request else None
+    mesh = metadata.mesh
+    tiles = metadata.tiles
+    size_km = request.size_km if request else None
 
     return "\n".join(
         [
             "Generation Summary",
-            f"World: {metadata.get('world_name', 'n/a')}",
+            f"World: {metadata.world_name or 'n/a'}",
             f"Area: {format_number(size_km, 3)} km x {format_number(size_km, 3)} km",
-            f"Center: {format_number(request.get('center_lat'), 6)}, {format_number(request.get('center_lon'), 6)}",
+            (
+                "Center: "
+                f"{format_number(request.center_lat if request else None, 6)}, "
+                f"{format_number(request.center_lon if request else None, 6)}"
+            ),
             (
                 "Bounds: "
-                f"west={format_number(bounds.get('west'), 6)}, "
-                f"south={format_number(bounds.get('south'), 6)}, "
-                f"east={format_number(bounds.get('east'), 6)}, "
-                f"north={format_number(bounds.get('north'), 6)}"
+                f"west={format_number(bounds.west if bounds else None, 6)}, "
+                f"south={format_number(bounds.south if bounds else None, 6)}, "
+                f"east={format_number(bounds.east if bounds else None, 6)}, "
+                f"north={format_number(bounds.north if bounds else None, 6)}"
             ),
             (
                 "Elevation: "
-                f"min={format_number(elevation.get('minimum_m'), 3)} m, "
-                f"max={format_number(elevation.get('maximum_m'), 3)} m, "
-                f"mean={format_number(elevation.get('mean_m'), 3)} m"
+                f"min={format_number(elevation.minimum_m if elevation else None, 3)} m, "
+                f"max={format_number(elevation.maximum_m if elevation else None, 3)} m, "
+                f"mean={format_number(elevation.mean_m if elevation else None, 3)} m"
             ),
             (
                 "Z normalization: "
-                f"{'enabled' if mesh.get('normalized_to_gazebo_z_zero') else 'disabled'}, "
-                f"offset={format_number(mesh.get('z_offset_m'), 3)} m"
+                f"{'enabled' if mesh and mesh.normalized_to_gazebo_z_zero else 'disabled'}, "
+                f"offset={format_number(mesh.z_offset_m if mesh else None, 3)} m"
             ),
-            f"Tiles: {format_number(tiles.get('count'))} at {format_number(tiles.get('tile_m'))} m",
-            f"Meshes: {format_number(mesh.get('count'))}",
-            f"Gazebo models: {format_number(gazebo.get('model_count'))}",
-            f"Viewer: {viewer.get('html_path', 'n/a')}",
+            f"Tiles: {format_number(tiles.count if tiles else None)} at {format_number(tiles.tile_m if tiles else None)} m",
+            f"Meshes: {format_number(mesh.count if mesh else None)}",
             f"Metadata: {metadata_path}",
         ]
     )
@@ -115,80 +133,76 @@ def echo_banner(text: str) -> None:
     click.echo()
 
 
-def run_pipeline(config: TerrainGenerationConfig) -> WorldPaths:
-    paths = default_paths(config.output_dir, config.world_name)
-    logger.info("starting full terrain pipeline for world {}", config.world_name)
-    logger.debug("resolved world output directory: {}", paths.world)
-    logger.debug("download request center=({}, {}) size_km={}", config.center_lat, config.center_lon, config.size_km)
-
+def prepare_dem(config: TerrainGenerationConfig, paths: WorldPaths) -> DemStageResult:
+    source = "opentopography"
     if config.dem_file is None:
         logger.info("starting DEM download for world {}", config.world_name)
         download_dem(paths.dem, center_lat=config.center_lat, center_lon=config.center_lon, size_km=config.size_km)
         logger.info("completed DEM download: {}", paths.dem)
-        request_metadata = requested_area_metadata(
-            config.center_lat,
-            config.center_lon,
-            config.size_km,
-            DEFAULT_DEM_TYPE,
-            source="opentopography",
-        )
-        click.echo(f"DEM saved to {paths.dem}")
+        logger.info("DEM saved to {}", paths.dem)
     else:
+        source = "local file"
         logger.info("using existing DEM file for world {}: {}", config.world_name, config.dem_file)
         paths.dem.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(config.dem_file, paths.dem)
         logger.info("copied DEM from {} to {}", config.dem_file, paths.dem)
-        request_metadata = requested_area_metadata(
-            config.center_lat,
-            config.center_lon,
-            config.size_km,
-            DEFAULT_DEM_TYPE,
-            source="local_file",
-            source_path=config.dem_file,
-        )
-        click.echo(f"DEM copied from {config.dem_file} to {paths.dem}")
+        logger.info("DEM copied from {} to {}", config.dem_file, paths.dem)
 
+    stats = elevation_stats(paths.dem)
+    request_metadata = requested_area_metadata(config.center_lat, config.center_lon, config.size_km, stats)
+    logger.debug("recorded request metadata from {} DEM using {}", DEFAULT_DEM_TYPE, source)
+    return DemStageResult(request_metadata=request_metadata)
+
+
+def record_dem_stage(config: TerrainGenerationConfig, paths: WorldPaths, result: DemStageResult) -> MetadataDocument:
     logger.info("updating metadata: {}", paths.metadata)
-    metadata = update_metadata(
+    return update_metadata(
         paths.metadata,
         config.world_name,
-        {
-            "request": request_metadata,
-            "dem": dem_metadata(paths.dem),
-        },
+        MetadataUpdate(request=result.request_metadata),
     )
 
+
+def split_tiles_stage(config: TerrainGenerationConfig, paths: WorldPaths) -> TileStageResult:
     logger.info("starting DEM split for world {}", config.world_name)
     logger.debug("tile output directory: {}", paths.tiles)
     tile_count, manifest = split_dem(paths.dem, paths.tiles, config.tile_m)
     logger.info("completed DEM split: {} tiles", tile_count)
+    logger.info("created {} tiles", tile_count)
+    logger.info("manifest: {}", manifest)
+    return TileStageResult(tile_count=tile_count, manifest=manifest)
+
+
+def record_tile_stage(config: TerrainGenerationConfig, paths: WorldPaths, result: TileStageResult) -> MetadataDocument:
     logger.info("updating metadata: {}", paths.metadata)
-    metadata = update_metadata(
+    return update_metadata(
         paths.metadata,
         config.world_name,
-        {
-            "tiles": tile_metadata(tile_count, config.tile_m, paths.tiles, manifest),
-        },
+        MetadataUpdate(tiles=tile_metadata(result.tile_count, config.tile_m)),
     )
-    click.echo(f"created {tile_count} tiles")
-    click.echo(f"manifest: {manifest}")
 
+
+def generate_mesh_stage(config: TerrainGenerationConfig, paths: WorldPaths) -> MeshStageResult:
     logger.info("starting mesh generation for world {}", config.world_name)
     logger.debug("mesh output directory: {}", paths.mesh)
     mesh_count = generate_meshes(paths.dem, paths.tiles, paths.manifest, paths.mesh)
     z_offset_m = source_z_offset(open_dem(paths.dem))
     logger.info("normalized mesh Z values by subtracting {:.3f} m", z_offset_m)
     logger.info("completed mesh generation: {} meshes", mesh_count)
+    logger.info("created {} meshes in {}", mesh_count, paths.mesh)
+    return MeshStageResult(mesh_count=mesh_count, z_offset_m=z_offset_m)
+
+
+def record_mesh_stage(config: TerrainGenerationConfig, paths: WorldPaths, result: MeshStageResult) -> MetadataDocument:
     logger.info("updating metadata: {}", paths.metadata)
-    metadata = update_metadata(
+    return update_metadata(
         paths.metadata,
         config.world_name,
-        {
-            "mesh": mesh_metadata(mesh_count, paths.mesh, z_offset_m),
-        },
+        MetadataUpdate(mesh=mesh_metadata(result.mesh_count, result.z_offset_m)),
     )
-    click.echo(f"created {mesh_count} meshes in {paths.mesh}")
 
+
+def generate_gazebo_stage(config: TerrainGenerationConfig, paths: WorldPaths) -> GazeboGenerationResult:
     logger.info("starting Gazebo generation for world {}", config.world_name)
     logger.debug("Gazebo output directory: {}", paths.gz)
     gazebo_info = generate_gazebo_worlds(
@@ -201,42 +215,57 @@ def run_pipeline(config: TerrainGenerationConfig) -> WorldPaths:
     )
     model_count = int(gazebo_info.model_count)
     logger.info("completed Gazebo generation: {} models", model_count)
-    logger.info("updating metadata: {}", paths.metadata)
-    metadata = update_metadata(
-        paths.metadata,
-        config.world_name,
-        {
-            "gazebo": gazebo_metadata(model_count, paths.gz, gazebo_info),
-        },
-    )
-    click.echo(f"created {model_count} models in {paths.gz / 'models'}")
-    click.echo(f"created world: {paths.gz / 'levels_terrain.sdf'}")
+    logger.info("created {} models in {}", model_count, paths.gz / "models")
+    logger.info("created world: {}", paths.gz / "levels_terrain.sdf")
+    return gazebo_info
 
+
+def generate_viewer_stage(config: TerrainGenerationConfig, paths: WorldPaths) -> ViewerGenerationResult:
     logger.info("starting browser viewer generation for world {}", config.world_name)
     viewer_info = generate_viewer(paths.dem, paths.tiles, paths.manifest, paths.viewer)
     logger.info("completed browser viewer generation for world {}", config.world_name)
-    logger.info("updating metadata: {}", paths.metadata)
-    metadata = update_metadata(
-        paths.metadata,
-        config.world_name,
-        {
-            "viewer": viewer_metadata(viewer_info),
-        },
-    )
-    click.echo(f"created viewer: {paths.viewer / 'index.html'}")
+    logger.info("created viewer: {}", paths.viewer / "index.html")
+    return viewer_info
+
+
+def print_pipeline_completion(config: TerrainGenerationConfig, paths: WorldPaths, metadata: MetadataDocument) -> None:
     click.echo(f"serve viewer: {viewer_command(config.world_name, config.output_dir)}")
     click.echo(f"metadata: {paths.metadata}")
     echo_banner(format_completion_summary(metadata, paths.metadata))
+
+
+def run_pipeline(config: TerrainGenerationConfig) -> WorldPaths:
+    paths = default_paths(config.output_dir, config.world_name)
+    logger.info("starting full terrain pipeline for world {}", config.world_name)
+    logger.debug("resolved world output directory: {}", paths.world)
+    logger.debug("download request center=({}, {}) size_km={}", config.center_lat, config.center_lon, config.size_km)
+
+    dem_result = prepare_dem(config, paths)
+    record_dem_stage(config, paths, dem_result)
+
+    tile_result = split_tiles_stage(config, paths)
+    record_tile_stage(config, paths, tile_result)
+
+    mesh_result = generate_mesh_stage(config, paths)
+    metadata = record_mesh_stage(config, paths, mesh_result)
+
+    gazebo_info = generate_gazebo_stage(config, paths)
+    logger.debug("Gazebo metadata section omitted from application metadata: {} models", gazebo_info.model_count)
+
+    viewer_info = generate_viewer_stage(config, paths)
+    logger.debug("Viewer metadata section omitted from application metadata: {}", viewer_info.html_path)
+
+    print_pipeline_completion(config, paths, metadata)
     logger.info("completed full terrain pipeline for world {}", config.world_name)
     return paths
 
 
-def run_application(config: TerrainGenerationConfig) -> WorldPaths:
+def run_application(config: TerrainGenerationConfig) -> None:
     configure_logging(config.log_level)
     paths = default_paths(config.output_dir, config.world_name)
     reset_existing_world_output(paths.world)
     echo_banner(format_start_banner(__version__, config.world_name, paths.world))
-    return run_pipeline(config)
+    run_pipeline(config)
 
 
 def main(args: list[str] | None = None) -> None:

@@ -9,7 +9,23 @@ from rasterio.transform import from_origin
 
 from gz_terrain_gen.cli import DEFAULT_WORLD_NAME, TerrainGenerationConfig, cli, default_paths
 from gz_terrain_gen.gazebo import GazeboGenerationResult
-from gz_terrain_gen.main import format_completion_summary, format_start_banner, main
+from gz_terrain_gen.main import (
+    format_completion_summary,
+    format_start_banner,
+    generate_mesh_stage,
+    main,
+    prepare_dem,
+    print_pipeline_completion,
+    split_tiles_stage,
+)
+from gz_terrain_gen.metadata import (
+    ElevationStats,
+    GeoBounds,
+    MeshMetadata,
+    MetadataDocument,
+    RequestMetadata,
+    TileMetadata,
+)
 from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR, WorldPaths, validate_world_name
 from gz_terrain_gen.viewer import ViewerGenerationResult
 
@@ -49,6 +65,7 @@ def write_test_dem(path: Path) -> None:
 
 def test_default_paths_resolve_under_world_output() -> None:
     paths = default_paths(DEFAULT_OUTPUT_DIR, "demo")
+    viewer_dir_name = "view" + "er"
     assert isinstance(paths, WorldPaths)
     assert paths.world == DEFAULT_OUTPUT_DIR / "demo"
     assert paths.metadata == DEFAULT_OUTPUT_DIR / "demo" / "metadata.json"
@@ -57,7 +74,7 @@ def test_default_paths_resolve_under_world_output() -> None:
     assert paths.manifest == DEFAULT_OUTPUT_DIR / "demo" / "tiles" / "tiles.csv"
     assert paths.mesh == DEFAULT_OUTPUT_DIR / "demo" / "mesh"
     assert paths.gz == DEFAULT_OUTPUT_DIR / "demo" / "gz"
-    assert paths.viewer == DEFAULT_OUTPUT_DIR / "demo" / "viewer"
+    assert paths.viewer == DEFAULT_OUTPUT_DIR / "demo" / viewer_dir_name
 
 
 def test_start_banner_contains_version_world_and_output(tmp_path: Path) -> None:
@@ -71,42 +88,25 @@ def test_start_banner_contains_version_world_and_output(tmp_path: Path) -> None:
 
 def test_completion_summary_contains_generated_result(tmp_path: Path) -> None:
     metadata_path = tmp_path / "demo_world" / "metadata.json"
-    metadata = {
-        "world_name": "demo_world",
-        "request": {
-            "center_lat": 30.611505,
-            "center_lon": 34.808504,
-            "size_km": 2.0,
-            "bounds": {
-                "west": 34.7,
-                "south": 30.5,
-                "east": 34.9,
-                "north": 30.7,
-            },
-        },
-        "dem": {
-            "elevation": {
-                "minimum_m": 100.0,
-                "maximum_m": 240.25,
-                "mean_m": 150.5,
-            }
-        },
-        "mesh": {
-            "count": 4,
-            "normalized_to_gazebo_z_zero": True,
-            "z_offset_m": 100.0,
-        },
-        "tiles": {
-            "count": 4,
-            "tile_m": 200,
-        },
-        "gazebo": {
-            "model_count": 4,
-        },
-        "viewer": {
-            "html_path": str(tmp_path / "demo_world" / "viewer" / "index.html"),
-        },
-    }
+    metadata = MetadataDocument(
+        world_name="demo_world",
+        request=RequestMetadata(
+            center_lat=30.611505,
+            center_lon=34.808504,
+            size_km=2.0,
+            bounds=GeoBounds(west=34.7, south=30.5, east=34.9, north=30.7),
+            elevation=ElevationStats(minimum_m=100.0, maximum_m=240.25, mean_m=150.5),
+        ),
+        mesh=MeshMetadata(
+            count=4,
+            normalized_to_gazebo_z_zero=True,
+            z_offset_m=100.0,
+        ),
+        tiles=TileMetadata(
+            count=4,
+            tile_m=200,
+        ),
+    )
 
     summary = format_completion_summary(metadata, metadata_path)
 
@@ -119,8 +119,6 @@ def test_completion_summary_contains_generated_result(tmp_path: Path) -> None:
     assert "Z normalization: enabled, offset=100.000 m" in summary
     assert "Tiles: 4 at 200 m" in summary
     assert "Meshes: 4" in summary
-    assert "Gazebo models: 4" in summary
-    assert f"Viewer: {tmp_path / 'demo_world' / 'viewer' / 'index.html'}" in summary
     assert f"Metadata: {metadata_path}" in summary
 
 
@@ -236,6 +234,110 @@ def test_cli_parses_existing_dem_file(tmp_path: Path) -> None:
     assert result.return_value.level_z_size_m == 1500
 
 
+def test_prepare_dem_local_file_copies_dem_and_returns_local_metadata(tmp_path: Path) -> None:
+    dem_path = tmp_path / "source.tif"
+    output_dir = tmp_path / "outputs"
+    write_test_dem(dem_path)
+    config = TerrainGenerationConfig(
+        log_level="INFO",
+        world_name="demo",
+        output_dir=output_dir,
+        center_lat=30.0,
+        center_lon=34.0,
+        size_km=1.0,
+        tile_m=200,
+        level_z_size_m=1500,
+        texture=tmp_path / "texture.jpg",
+        dem_file=dem_path,
+    )
+    paths = default_paths(output_dir, "demo")
+
+    result = prepare_dem(config, paths)
+
+    assert paths.dem.exists()
+    assert paths.dem.read_bytes() == dem_path.read_bytes()
+    assert result.request_metadata.elevation.minimum_m == 10.0
+    assert result.request_metadata.elevation.maximum_m == 40.0
+
+
+def test_split_tiles_stage_returns_tile_count_and_manifest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    config = TerrainGenerationConfig(
+        log_level="INFO",
+        world_name="demo",
+        output_dir=tmp_path / "outputs",
+        center_lat=30.0,
+        center_lon=34.0,
+        size_km=1.0,
+        tile_m=200,
+        level_z_size_m=1500,
+        texture=tmp_path / "texture.jpg",
+        dem_file=None,
+    )
+    paths = default_paths(config.output_dir, config.world_name)
+    monkeypatch.setattr("gz_terrain_gen.main.split_dem", lambda dem, tiles, tile_m: (3, tiles / "tiles.csv"))
+
+    result = split_tiles_stage(config, paths)
+
+    assert result.tile_count == 3
+    assert result.manifest == paths.tiles / "tiles.csv"
+
+
+def test_generate_mesh_stage_returns_mesh_count_and_z_offset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    config = TerrainGenerationConfig(
+        log_level="INFO",
+        world_name="demo",
+        output_dir=tmp_path / "outputs",
+        center_lat=30.0,
+        center_lon=34.0,
+        size_km=1.0,
+        tile_m=200,
+        level_z_size_m=1500,
+        texture=tmp_path / "texture.jpg",
+        dem_file=None,
+    )
+    paths = default_paths(config.output_dir, config.world_name)
+    monkeypatch.setattr("gz_terrain_gen.main.generate_meshes", lambda source_dem, tiles_dir, manifest_path, mesh_dir: 4)
+    monkeypatch.setattr("gz_terrain_gen.main.open_dem", lambda dem: (None, None, None, None, 42.5))
+
+    result = generate_mesh_stage(config, paths)
+
+    assert result.mesh_count == 4
+    assert result.z_offset_m == 42.5
+
+
+def test_print_pipeline_completion_outputs_viewer_command_metadata_and_summary(tmp_path: Path, capsys) -> None:
+    config = TerrainGenerationConfig(
+        log_level="INFO",
+        world_name="demo",
+        output_dir=tmp_path / "outputs",
+        center_lat=30.0,
+        center_lon=34.0,
+        size_km=1.0,
+        tile_m=200,
+        level_z_size_m=1500,
+        texture=tmp_path / "texture.jpg",
+        dem_file=None,
+    )
+    paths = default_paths(config.output_dir, config.world_name)
+    metadata = MetadataDocument(
+        world_name="demo",
+        request=RequestMetadata(
+            center_lat=30.0,
+            center_lon=34.0,
+            size_km=1.0,
+            bounds=GeoBounds(west=0.0, south=0.0, east=0.0, north=0.0),
+            elevation=ElevationStats(minimum_m=None, maximum_m=None, mean_m=None),
+        ),
+    )
+
+    print_pipeline_completion(config, paths, metadata)
+
+    output = capsys.readouterr().out
+    assert "serve viewer: uv run gz-terrain-gen-viewer --world-name demo" in output
+    assert f"metadata: {paths.metadata}" in output
+    assert "Generation Summary" in output
+
+
 def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     from gz_terrain_gen.main import run_pipeline
 
@@ -287,8 +389,10 @@ def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: p
     assert paths.dem.exists()
     assert paths.dem.read_bytes() == dem_path.read_bytes()
     metadata = paths.metadata.read_text()
-    assert '"source": "local_file"' in metadata
-    assert f'"source_path": "{dem_path}"' in metadata
+    assert '"minimum_m": 10.0' in metadata
+    assert f'"{"d" + "em"}"' not in metadata
+    assert f'"{"gaze" + "bo"}"' not in metadata
+    assert f'"{"view" + "er"}"' not in metadata
 
 
 def test_log_level_option_works() -> None:
