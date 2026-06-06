@@ -8,6 +8,7 @@ from loguru import logger
 
 from gz_terrain_gen import __version__
 from gz_terrain_gen.cli import TerrainGenerationConfig, parse_args
+from gz_terrain_gen.dem_source import DemSource, LocalFileDemSource, OpenTopographyDemSource
 from gz_terrain_gen.gazebo import GazeboGenerationResult, generate_gazebo_worlds
 from gz_terrain_gen.log_config import configure_logging
 from gz_terrain_gen.mesh import generate_meshes, open_dem, source_z_offset
@@ -21,7 +22,6 @@ from gz_terrain_gen.metadata import (
     tile_metadata,
     update_metadata,
 )
-from gz_terrain_gen.opentopo import DEFAULT_DEM_TYPE, download_dem
 from gz_terrain_gen.paths import DEFAULT_OUTPUT_DIR, WorldPaths, default_paths
 from gz_terrain_gen.tiling import split_dem
 from gz_terrain_gen.viewer import ViewerGenerationResult, generate_viewer
@@ -133,24 +133,25 @@ def echo_banner(text: str) -> None:
     click.echo()
 
 
-def prepare_dem(config: TerrainGenerationConfig, paths: WorldPaths) -> DemStageResult:
-    source = "opentopography"
-    if config.dem_file is None:
-        logger.info("starting DEM download for world {}", config.world_name)
-        download_dem(paths.dem, center_lat=config.center_lat, center_lon=config.center_lon, size_km=config.size_km)
-        logger.info("completed DEM download: {}", paths.dem)
-        logger.info("DEM saved to {}", paths.dem)
-    else:
-        source = "local file"
-        logger.info("using existing DEM file for world {}: {}", config.world_name, config.dem_file)
-        paths.dem.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(config.dem_file, paths.dem)
-        logger.info("copied DEM from {} to {}", config.dem_file, paths.dem)
-        logger.info("DEM copied from {} to {}", config.dem_file, paths.dem)
+def dem_source_from_config(config: TerrainGenerationConfig) -> DemSource:
+    if config.dem_file is not None:
+        return LocalFileDemSource(config.dem_file)
+    return OpenTopographyDemSource(
+        center_lat=config.center_lat,
+        center_lon=config.center_lon,
+        size_km=config.size_km,
+    )
 
-    stats = elevation_stats(paths.dem)
+
+def prepare_dem(config: TerrainGenerationConfig, paths: WorldPaths) -> DemStageResult:
+    dem_source = dem_source_from_config(config)
+    logger.info("preparing DEM for world {} using {}", config.world_name, dem_source.name)
+    result = dem_source.prepare(paths.dem)
+    logger.info("DEM prepared by {} at {}", result.source_name, result.path)
+
+    stats = elevation_stats(result.path)
     request_metadata = requested_area_metadata(config.center_lat, config.center_lon, config.size_km, stats)
-    logger.debug("recorded request metadata from {} DEM using {}", DEFAULT_DEM_TYPE, source)
+    logger.debug("recorded request metadata using {} DEM source", result.source_name)
     return DemStageResult(request_metadata=request_metadata)
 
 

@@ -1,3 +1,8 @@
+"""OpenTopography DEM request helpers for terrain generation.
+
+See docs/application_flow.md for where DEM preparation fits in the pipeline.
+"""
+
 import math
 import os
 from pathlib import Path

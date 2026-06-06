@@ -54,6 +54,30 @@ uv run gz-terrain-gen --help
 - Keep `click.echo` for user-facing command result summaries.
 - Do not log secrets, API keys, or credential values.
 
+## Python Module Conventions
+
+- Every Python module should start with a short module docstring.
+- The docstring should explain the module's responsibility in one or two
+  sentences.
+- Keep module docstrings practical; do not turn them into long design
+  documents.
+- If a module maps to a documented diagram, include a relative Markdown-style
+  reference in the docstring text, for example:
+
+```python
+"""Pipeline orchestration for terrain generation.
+
+See docs/application_flow.md for the application block flow.
+"""
+```
+
+- Prefer links to stable docs such as `docs/application_flow.md`,
+  `docs/metadata_design.md`, and `docs/architecture.md`.
+- Do not link module docstrings to generated files under `outputs/`.
+- Put the module docstring before imports. If the module uses
+  `from __future__ import ...`, keep the future import first and put the
+  docstring immediately after it.
+
 ## Data Shape Conventions
 
 - Use `@dataclass(frozen=True)` for fixed-shape internal application data.

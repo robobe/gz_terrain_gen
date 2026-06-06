@@ -348,7 +348,7 @@ def test_run_pipeline_with_dem_file_skips_download_and_copies_dem(monkeypatch: p
     def fail_download(*args, **kwargs):
         raise AssertionError("download_dem should not be called")
 
-    monkeypatch.setattr("gz_terrain_gen.main.download_dem", fail_download)
+    monkeypatch.setattr("gz_terrain_gen.dem_source.download_dem", fail_download)
     monkeypatch.setattr("gz_terrain_gen.main.split_dem", lambda dem, tiles, tile_m: (0, tiles / "tiles.csv"))
     monkeypatch.setattr("gz_terrain_gen.main.generate_meshes", lambda source_dem, tiles_dir, manifest_path, mesh_dir: 0)
     monkeypatch.setattr(
