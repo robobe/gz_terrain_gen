@@ -165,12 +165,12 @@ def record_dem_stage(config: TerrainGenerationConfig, paths: WorldPaths, result:
 
 
 def split_tiles_stage(config: TerrainGenerationConfig, paths: WorldPaths) -> TileStageResult:
-    logger.info("starting DEM split for world {}", config.world_name)
+    logger.info("Starting DEM split for world {}", config.world_name)
     logger.debug("tile output directory: {}", paths.tiles)
     tile_count, manifest = split_dem(paths.dem, paths.tiles, config.tile_m)
     logger.info("completed DEM split: {} tiles", tile_count)
-    logger.info("created {} tiles", tile_count)
-    logger.info("manifest: {}", manifest)
+    logger.info("csv manifest: {}", manifest)
+    logger.info("End DEM split for world {}", config.world_name)
     return TileStageResult(tile_count=tile_count, manifest=manifest)
 
 
@@ -184,13 +184,13 @@ def record_tile_stage(config: TerrainGenerationConfig, paths: WorldPaths, result
 
 
 def generate_mesh_stage(config: TerrainGenerationConfig, paths: WorldPaths) -> MeshStageResult:
-    logger.info("starting mesh generation for world {}", config.world_name)
+    logger.info("Starting mesh generation for world {}", config.world_name)
     logger.debug("mesh output directory: {}", paths.mesh)
     mesh_count = generate_meshes(paths.dem, paths.tiles, paths.manifest, paths.mesh)
     z_offset_m = source_z_offset(open_dem(paths.dem))
     logger.info("normalized mesh Z values by subtracting {:.3f} m", z_offset_m)
-    logger.info("completed mesh generation: {} meshes", mesh_count)
     logger.info("created {} meshes in {}", mesh_count, paths.mesh)
+    logger.info("End mesh generation for world {}", config.world_name)
     return MeshStageResult(mesh_count=mesh_count, z_offset_m=z_offset_m)
 
 
@@ -204,7 +204,7 @@ def record_mesh_stage(config: TerrainGenerationConfig, paths: WorldPaths, result
 
 
 def generate_gazebo_stage(config: TerrainGenerationConfig, paths: WorldPaths) -> GazeboGenerationResult:
-    logger.info("starting Gazebo generation for world {}", config.world_name)
+    logger.info("Starting Gazebo generation for world {}", config.world_name)
     logger.debug("Gazebo output directory: {}", paths.gz)
     gazebo_info = generate_gazebo_worlds(
         paths.manifest,
@@ -215,17 +215,17 @@ def generate_gazebo_stage(config: TerrainGenerationConfig, paths: WorldPaths) ->
         config.level_z_size_m,
     )
     model_count = int(gazebo_info.model_count)
-    logger.info("completed Gazebo generation: {} models", model_count)
     logger.info("created {} models in {}", model_count, paths.gz / "models")
     logger.info("created world: {}", paths.gz / "levels_terrain.sdf")
+    logger.info("End Gazebo generation for world {}", config.world_name)
     return gazebo_info
 
 
 def generate_viewer_stage(config: TerrainGenerationConfig, paths: WorldPaths) -> ViewerGenerationResult:
-    logger.info("starting browser viewer generation for world {}", config.world_name)
+    logger.info("Starting browser viewer generation for world {}", config.world_name)
     viewer_info = generate_viewer(paths.dem, paths.tiles, paths.manifest, paths.viewer)
-    logger.info("completed browser viewer generation for world {}", config.world_name)
     logger.info("created viewer: {}", paths.viewer / "index.html")
+    logger.info("End browser viewer generation for world {}", config.world_name)
     return viewer_info
 
 
@@ -241,21 +241,27 @@ def run_pipeline(config: TerrainGenerationConfig) -> WorldPaths:
     logger.debug("resolved world output directory: {}", paths.world)
     logger.debug("download request center=({}, {}) size_km={}", config.center_lat, config.center_lon, config.size_km)
 
+    # fetch DEM data
     dem_result = prepare_dem(config, paths)
     record_dem_stage(config, paths, dem_result)
 
+    # split DEM into tiles 
     tile_result = split_tiles_stage(config, paths)
     record_tile_stage(config, paths, tile_result)
 
+    # generate meshes from tiles
     mesh_result = generate_mesh_stage(config, paths)
     metadata = record_mesh_stage(config, paths, mesh_result)
 
+    # generate Gazebo world and models
     gazebo_info = generate_gazebo_stage(config, paths)
     logger.debug("Gazebo metadata section omitted from application metadata: {} models", gazebo_info.model_count)
 
+    # generate mesh viewer using browser-based WebGL
     viewer_info = generate_viewer_stage(config, paths)
     logger.debug("Viewer metadata section omitted from application metadata: {}", viewer_info.html_path)
 
+    # print summary 
     print_pipeline_completion(config, paths, metadata)
     logger.info("completed full terrain pipeline for world {}", config.world_name)
     return paths

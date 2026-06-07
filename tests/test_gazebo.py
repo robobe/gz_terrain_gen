@@ -1,3 +1,6 @@
+"""Tests for Gazebo model and world generation."""
+
+import ast
 from pathlib import Path
 
 from gz_terrain_gen.gazebo import (
@@ -10,6 +13,8 @@ from gz_terrain_gen.gazebo import (
     world_sdf,
     write_probe_model,
 )
+
+GAZEBO_MODULE = Path("src/gz_terrain_gen/gazebo.py")
 
 
 def write_dae(path: Path, positions: str) -> None:
@@ -32,6 +37,39 @@ def write_dae(path: Path, positions: str) -> None:
 
 def test_model_name_prefixes_tile_stem() -> None:
     assert model_name("tile_0_0") == "terrain_tile_0_0"
+
+
+def test_gazebo_stable_identifiers_are_defined_once_as_constants() -> None:
+    tree = ast.parse(GAZEBO_MODULE.read_text(encoding="utf-8"))
+    string_values = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    ]
+
+    stable_identifiers = [
+        "model.config",
+        "model.sdf",
+        "models",
+        "meshes",
+        "materials",
+        "textures",
+        "soil.jpg",
+        ".dae",
+        "levels_terrain.sdf",
+        "single_tile_terrain.sdf",
+        "travel_levels.sh",
+        "README.md",
+        "level_probe",
+        "model://",
+        "gazebo_center_x_m",
+        "gazebo_center_y_m",
+        "gazebo_corner_x_m",
+        "gazebo_corner_y_m",
+    ]
+
+    for identifier in stable_identifiers:
+        assert string_values.count(identifier) == 1
 
 
 def test_world_sdf_contains_expected_world_and_model_names() -> None:

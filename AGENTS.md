@@ -109,3 +109,12 @@ See docs/application_flow.md for the application block flow.
 - Browser mesh viewer/export: trimesh and pygltflib
 - HTTP: requests
 - Logging: Loguru
+
+## String Constants
+
+- Avoid repeated free string literals in Python modules.
+- Put stable filenames, model names, XML tag names, plugin names, and external identifiers
+  in module-level constants directly below imports.
+- Use uppercase constant names, for example `LEVELS_TERRAIN_SDF = "levels_terrain.sdf"`.
+- Do not convert one-off human-readable messages, docstrings, or large XML templates unless
+  doing so improves clarity.
